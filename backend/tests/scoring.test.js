@@ -21,23 +21,22 @@ test("scoring returns Unknown for missing or out-of-range scores", () => {
   assert.equal(scoring.ratingForScore(101), "Unknown");
 });
 
-test("data older than 60 minutes returns Unknown, not a stale rating", () => {
+test("staleness horizon is 30 minutes: 31 min is stale, 29 min is not", () => {
+  // AC 1.1.2. NOTE: staleness no longer blanks the rating to Unknown (that was
+  // the old 60-minute behaviour). Staleness now only drives the route dataState;
+  // the numeric rating stays visible with an "outdated" warning. So this asserts
+  // isStale, not a rating change.
   const now = new Date("2026-08-06T09:00:00+10:00");
 
-  const fresh = scoring.ratingForFreshScore(20, {
-    dataUpdatedAt: "2026-08-06T08:30:00+10:00", // 30 min old
-    now,
-  });
-  assert.equal(fresh, "Low");
+  const twentyNine = new Date(now.getTime() - 29 * 60 * 1000);
+  const thirtyOne = new Date(now.getTime() - 31 * 60 * 1000);
 
-  const stale = scoring.ratingForFreshScore(20, {
-    dataUpdatedAt: "2026-08-06T07:00:00+10:00", // 2 hours old
-    now,
-  });
-  assert.equal(stale, "Unknown");
+  assert.equal(scoring.isStale(twentyNine, now), false, "29 min is fresh");
+  assert.equal(scoring.isStale(thirtyOne, now), true, "31 min is stale");
+});
 
-  const noTimestamp = scoring.ratingForFreshScore(20, { now });
-  // With no timestamp we cannot claim freshness, but we don't invent staleness
-  // either - we grade the number we were given.
-  assert.equal(noTimestamp, "Low");
+test("missing/invalid timestamp counts as stale (cannot confirm freshness)", () => {
+  const now = new Date();
+  assert.equal(scoring.isStale(null, now), true);
+  assert.equal(scoring.isStale("not-a-date", now), true);
 });
