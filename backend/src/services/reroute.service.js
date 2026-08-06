@@ -2,6 +2,7 @@
 
 const google = require("./google.service");
 const routeService = require("./route.service");
+const metrics = require("./routeMetrics");
 const { haversineMetres } = require("../utils/geo");
 const { congestionPointId } = require("../utils/ids");
 
@@ -96,26 +97,18 @@ async function evaluate(request) {
 // The calmest candidate that isn't the one the user is already on.
 function buildAlternative(candidates, activeRouteId, threshold) {
   const now = new Date();
-  const fastest = candidates.reduce(
-    (best, c) =>
-      best == null || c.durationMinutes < best.durationMinutes ? c : best,
-    null
-  );
-  const fastestDuration = fastest ? fastest.durationMinutes : null;
-
   const assembled = candidates
     .filter((c) => c.routeId !== activeRouteId)
     .map((c) => {
       if (!c.dataUpdatedAt) c.dataUpdatedAt = now.toISOString();
-      return routeService.assembleRoute(c, {
-        threshold,
-        fastestDuration,
-        now,
-      });
-    })
-    .sort(routeService.byCalmestThenFastest);
+      return routeService.assembleBase(c, { threshold, now });
+    });
 
-  return assembled[0] || null;
+  const finalized = routeService.finalizeRoutes(assembled, {
+    maxRoutes: metrics.MAX_ROUTES,
+    maxExtraMinutes: metrics.ALTERNATIVE_MAX_EXTRA_MINUTES,
+  });
+  return finalized.routes[0] || null;
 }
 
 module.exports = { evaluate };

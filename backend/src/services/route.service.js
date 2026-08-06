@@ -4,16 +4,23 @@ const google = require("./google.service");
 const pedestrian = require("./pedestrian.service");
 const refuge = require("./refuge.service");
 const scoring = require("./scoring.service");
+const metrics = require("./routeMetrics");
 const { countToCrowdScore } = require("../utils/crowd");
 const { haversineMetres } = require("../utils/geo");
+const { melbourneParts } = require("../utils/time");
 
 /**
  * Orchestrates one route recommendation (US1.1 / US1.2).
  *
  * The calmest-first ordering is the ENTIRE product, so it lives here, applied
- * identically to mock and live candidates. This service never talks to the DB
- * or Google directly - it composes the google/pedestrian/refuge services and
- * the pure scoring service.
+ * identically to mock and live candidates. This service composes the
+ * google/pedestrian/refuge services, the pure scoring service, and the pure
+ * routeMetrics helpers - it does not talk to the DB or Google directly.
+ *
+ * Every per-route state the frontend keys an AC message off (dataState,
+ * sensorCoverage, the four distance buckets, ratingReason, the quieter
+ * alternative) is computed here so the frontend never has to guess which
+ * exception message applies.
  */
 
 // How many walking minutes of refuges to attach near the start point.
@@ -28,52 +35,43 @@ async function recommend(request) {
   const threshold = preferences.crowdThreshold;
   const now = new Date();
 
-  // 1. Candidate geometry (live Google or mock).
+  // 1. Candidate geometry (live Google or mock). Empty => no routes exist.
   const { candidates, source: googleSource } = await google.getCandidateRoutes(
     start,
     destination
   );
 
   // 2. Ensure every candidate has scored segments. Mock candidates already do;
-  //    live candidates get scored here from pedestrian data.
+  //    live candidates get scored (with coverage) here from pedestrian data.
   let pedestrianSource = null;
   for (const c of candidates) {
-    if (!Array.isArray(c.segments) || c.segments.length === 0) {
-      const enriched = await scoreLiveCandidate(c, now);
-      pedestrianSource = mergeSource(pedestrianSource, enriched.pedestrianSource);
-      c.segments = enriched.segments;
-      c.sensorsUsed = enriched.sensorsUsed;
-      c.congestionPoints = enriched.congestionPoints;
-      c.averageCountPerHour = enriched.averageCountPerHour;
-      c.dataUpdatedAt = enriched.dataUpdatedAt;
-    } else {
-      // Mock candidates are timestamped "now" so freshness checks pass.
-      c.dataUpdatedAt = now.toISOString();
+    if (!c.dataUpdatedAt) c.dataUpdatedAt = now.toISOString();
+    if (c.segments && c.segments.length && c.segments[0].lengthMetres != null) {
+      continue; // mock candidate: fully formed
     }
+    const enriched = await scoreLiveCandidate(c, departureTime, now);
+    pedestrianSource = mergeSource(pedestrianSource, enriched.pedestrianSource);
+    Object.assign(c, enriched.candidateFields);
   }
 
-  // 3. Fastest duration across all candidates (for the explicit trade-off).
-  const fastest = candidates.reduce((best, c) =>
-    best == null || c.durationMinutes < best.durationMinutes ? c : best,
-    null
-  );
-  const fastestDuration = fastest ? fastest.durationMinutes : null;
+  // 3. Assemble full route objects (no cross-route fields yet).
+  const assembled = candidates.map((c) => assembleBase(c, { threshold, now }));
 
-  // 4. Assemble the full route objects.
-  const routes = candidates.map((c) =>
-    assembleRoute(c, { threshold, fastestDuration, now })
-  );
+  // 4. Rank calmest-first, cap to three, and compute cross-route fields.
+  const finalized = finalizeRoutes(assembled, {
+    maxRoutes: metrics.MAX_ROUTES,
+    maxExtraMinutes: metrics.ALTERNATIVE_MAX_EXTRA_MINUTES,
+  });
+  const routes = finalized.routes;
 
-  // 5. Calmest-first ordering: crowdScore ascending, duration as tie-break.
-  //    Routes with an Unknown/no score sort last (they can't be recommended
-  //    over a route we can actually vouch for).
-  routes.sort(byCalmestThenFastest);
-
-  const recommended = routes[0] || null;
+  // 5. AC 1.1.1 / 2.1.3: no routes is a normal outcome, not a 500. We return
+  //    200 with an empty routes array and an explicit flag; the frontend picks
+  //    "No routes available for these locations." or "Unable to generate
+  //    directions to this refuge." from context.
+  const noRoutesAvailable = routes.length === 0;
 
   // 6. noLowSensoryRouteAvailable (US1.2 AC2): true when EVERY route has at
-  //    least one segment over the user's threshold. We still recommend the
-  //    least-bad route, but say so plainly.
+  //    least one covered segment over the user's threshold.
   const noLowSensoryRouteAvailable =
     routes.length > 0 &&
     routes.every((r) => r.segments.some((s) => s.exceedsThreshold));
@@ -83,78 +81,89 @@ async function recommend(request) {
       "We've recommended the calmest of them, but none avoids high density entirely."
     : null;
 
-  // 7. Refuge spaces near the start, so Freddy can see a bolt-hole before he
-  //    sets off.
+  // 7. Refuge spaces near the start.
   const refugeResult = await refuge.findNearby(
     start.latitude,
     start.longitude,
     REFUGE_LOOKUP_MINUTES
   );
 
-  const dataSource = resolveDataSource(googleSource, pedestrianSource);
-  const dataUpdatedAt = now.toISOString();
-
   return {
     query: request,
-    recommendedRouteId: recommended ? recommended.routeId : null,
-    fastestRouteId: fastest ? fastest.routeId : null,
+    noRoutesAvailable,
+    recommendedRouteId: finalized.recommendedRouteId,
+    fastestRouteId: finalized.fastestRouteId,
+    quieterAlternativeRouteId: finalized.quieterAlternativeRouteId,
+    alternativeMaxExtraMinutes: metrics.ALTERNATIVE_MAX_EXTRA_MINUTES,
     noLowSensoryRouteAvailable,
     notice,
     routes,
     refugeSpaces: refugeResult.refuges,
-    dataUpdatedAt,
-    dataSource,
+    dataUpdatedAt: now.toISOString(),
+    dataSource: resolveDataSource(googleSource, pedestrianSource),
   };
 }
 
 /**
- * Turn a raw candidate (with scored segments) into the full API route object.
+ * Turn a raw candidate (with scored, coverage-aware segments) into a full route
+ * object, minus the cross-route trade-off fields (added in finalizeRoutes).
  * Exported so the reroute service can reuse the exact same shape.
  */
-function assembleRoute(candidate, { threshold, fastestDuration, now }) {
-  const segScores = candidate.segments.map((s) => s.crowdScore);
-  const crowdScore = scoring.meanScore(segScores);
-  const numericScores = segScores.filter(
-    (n) => typeof n === "number" && Number.isFinite(n)
-  );
-  const peakSegmentScore = numericScores.length
-    ? Math.max(...numericScores)
-    : null;
-
+function assembleBase(candidate, { threshold, now }) {
+  const rawSegments = candidate.segments || [];
   const dataUpdatedAt = candidate.dataUpdatedAt || now.toISOString();
-  const sensoryRating = scoring.ratingForFreshScore(crowdScore, {
-    dataUpdatedAt,
-    now,
-  });
 
-  const segments = candidate.segments.map((s, i) => ({
+  // Covered segments only feed the route score - we never average in a segment
+  // we couldn't measure.
+  const covered = rawSegments.filter(
+    (s) => s.hasLiveData && typeof s.crowdScore === "number"
+  );
+  const crowdScore = scoring.meanScore(covered.map((s) => s.crowdScore));
+  const peakSegment = covered.reduce(
+    (best, s) => (best == null || s.crowdScore > best.crowdScore ? s : best),
+    null
+  );
+  const peakSegmentScore = peakSegment ? peakSegment.crowdScore : null;
+
+  const dataState = metrics.dataStateFor(rawSegments, dataUpdatedAt, now);
+  const sensorCoverage = metrics.sensorCoverageFor(rawSegments);
+  const sensoryRating = scoring.ratingForScore(crowdScore); // Unknown if null
+
+  const buckets = metrics.distanceBuckets(rawSegments);
+
+  const segments = rawSegments.map((s, i) => ({
     segmentId: `${candidate.routeId}-seg-${i + 1}`,
     fromLatitude: s.fromLatitude,
     fromLongitude: s.fromLongitude,
     toLatitude: s.toLatitude,
     toLongitude: s.toLongitude,
-    crowdScore: s.crowdScore,
-    sensoryRating: scoring.ratingForFreshScore(s.crowdScore, {
-      dataUpdatedAt,
-      now,
-    }),
-    // exceedsThreshold is per-segment vs the user's own threshold (US1.2).
+    lengthMetres: Math.round(s.lengthMetres || 0),
+    // Uncovered segments carry NO crowd score and are Unknown / neutral-grey.
+    hasLiveData: Boolean(s.hasLiveData),
+    crowdScore: s.hasLiveData && typeof s.crowdScore === "number" ? s.crowdScore : null,
+    sensoryRating: metrics.segmentRating(s),
     exceedsThreshold:
-      typeof s.crowdScore === "number" && s.crowdScore > threshold,
+      Boolean(s.hasLiveData) &&
+      typeof s.crowdScore === "number" &&
+      s.crowdScore > threshold,
   }));
 
-  const minutesSlowerThanFastest =
-    candidate.durationMinutes != null && fastestDuration != null
-      ? candidate.durationMinutes - fastestDuration
-      : null;
+  const ratingReason = metrics.buildRatingReason({
+    hasLiveData: dataState !== "unavailable",
+    peakSegment,
+    historicalPeakScore:
+      candidate.historicalPeakScore != null
+        ? candidate.historicalPeakScore
+        : null,
+  });
 
-  // "high" when we have a fresh, known rating; "low" when the rating is Unknown
-  // (stale or missing data). Reflects trust in the number, not mock-vs-live.
-  const confidence = sensoryRating === scoring.RATING_UNKNOWN ? "low" : "high";
+  // "high" only when we have a fresh, known rating; "low" otherwise. dataState
+  // is the richer signal, but confidence is kept for backward compatibility.
+  const confidence =
+    crowdScore != null && dataState === "live" ? "high" : "low";
 
   // bypassedAreas are only the high-density areas actually above the user's
-  // threshold - filtered so a high threshold doesn't claim to "bypass" a place
-  // the user was happy to walk through.
+  // threshold.
   const bypassedAreas = (candidate.bypassedAreas || []).filter(
     (a) => typeof a.crowdScore === "number" && a.crowdScore > threshold
   );
@@ -163,13 +172,24 @@ function assembleRoute(candidate, { threshold, fastestDuration, now }) {
     routeId: candidate.routeId,
     summary: candidate.summary,
     durationMinutes: candidate.durationMinutes,
-    distanceMetres: candidate.distanceMetres,
-    minutesSlowerThanFastest,
+    distanceMetres: buckets.totalDistanceMetres,
+    // cross-route fields, filled by finalizeRoutes:
+    minutesSlowerThanFastest: null,
+    minutesSlowerThanRecommended: null,
+    highCrowdDistanceSavedMetres: null,
     polyline: candidate.polyline,
     crowdScore,
     sensoryRating,
+    ratingReason,
+    dataState,
+    sensorCoverage,
     confidence,
     dataUpdatedAt,
+    // Four-state distance breakdown (AC 1.2.1 legend / AC 1.2.2 summary).
+    highCrowdDistanceMetres: buckets.highCrowdDistanceMetres,
+    moderateCrowdDistanceMetres: buckets.moderateCrowdDistanceMetres,
+    lowCrowdDistanceMetres: buckets.lowCrowdDistanceMetres,
+    noDataDistanceMetres: buckets.noDataDistanceMetres,
     contributingFactors: {
       pedestrianDensity: {
         averageCountPerHour:
@@ -187,6 +207,53 @@ function assembleRoute(candidate, { threshold, fastestDuration, now }) {
   };
 }
 
+/**
+ * Rank calmest-first, cap to maxRoutes, then compute the cross-route trade-off
+ * fields and the quieter alternative. Shared by recommend() and reroute.
+ */
+function finalizeRoutes(routeObjs, { maxRoutes, maxExtraMinutes }) {
+  const sorted = routeObjs.slice().sort(byCalmestThenFastest);
+  const routes = sorted.slice(0, maxRoutes);
+
+  if (routes.length === 0) {
+    return {
+      routes,
+      recommendedRouteId: null,
+      fastestRouteId: null,
+      quieterAlternativeRouteId: null,
+    };
+  }
+
+  const recommended = routes[0]; // calmest
+  const fastest = routes.reduce((best, r) =>
+    best == null || r.durationMinutes < best.durationMinutes ? r : best,
+    null
+  );
+
+  for (const r of routes) {
+    r.minutesSlowerThanFastest = r.durationMinutes - fastest.durationMinutes;
+    r.minutesSlowerThanRecommended =
+      r.durationMinutes - recommended.durationMinutes;
+    r.highCrowdDistanceSavedMetres = Math.max(
+      0,
+      fastest.highCrowdDistanceMetres - r.highCrowdDistanceMetres
+    );
+  }
+
+  const quieterAlternativeRouteId = metrics.pickQuieterAlternative(routes, {
+    fastest,
+    recommended,
+    maxExtraMinutes,
+  });
+
+  return {
+    routes,
+    recommendedRouteId: recommended.routeId,
+    fastestRouteId: fastest.routeId,
+    quieterAlternativeRouteId,
+  };
+}
+
 // Calmest first (lower crowdScore wins); a null score sorts last; ties broken by
 // shorter duration.
 function byCalmestThenFastest(a, b) {
@@ -197,12 +264,16 @@ function byCalmestThenFastest(a, b) {
 }
 
 /**
- * Score a live Google candidate segment-by-segment from pedestrian data.
- * Only runs on the live path (mock candidates arrive pre-scored). Not covered
- * by the mock test suite - noted in the README.
+ * Score a live Google candidate segment-by-segment from pedestrian data,
+ * respecting sensor coverage: a segment with no sensor within
+ * COVERAGE_RADIUS_METRES is left UNSCORED (hasLiveData false), never guessed.
+ * Only runs on the live path; not covered by the mock test suite (see README).
  */
-async function scoreLiveCandidate(candidate, now) {
+async function scoreLiveCandidate(candidate, departureTime, now) {
   const points = Array.isArray(candidate.points) ? candidate.points : [];
+  const sampled = samplepoints(points, 6);
+  const { dayOfWeek, hour } = melbourneParts(departureTime || now);
+
   const segments = [];
   const sensorsUsed = [];
   const seenSensors = new Set();
@@ -210,8 +281,8 @@ async function scoreLiveCandidate(candidate, now) {
   const counts = [];
   let oldestObservedAt = null;
   let pedestrianSource = null;
+  let peakCovered = null;
 
-  const sampled = samplepoints(points, 6);
   for (let i = 0; i < sampled.length - 1; i += 1) {
     const from = sampled[i];
     const to = sampled[i + 1];
@@ -219,59 +290,108 @@ async function scoreLiveCandidate(candidate, now) {
       latitude: (from.latitude + to.latitude) / 2,
       longitude: (from.longitude + to.longitude) / 2,
     };
-
-    const sensor = await pedestrian.nearestSensor(mid.latitude, mid.longitude);
-    const latest = await pedestrian.latestCount(sensor.sensorId, sensor.source);
-    pedestrianSource = mergeSource(
-      pedestrianSource,
-      mergeSource(sensor.source, latest.source)
+    const lengthMetres = haversineMetres(
+      from.latitude,
+      from.longitude,
+      to.latitude,
+      to.longitude
     );
 
-    const crowdScore = countToCrowdScore(latest.count);
-    if (typeof latest.count === "number") counts.push(latest.count);
-    if (latest.observedAt) {
-      if (!oldestObservedAt || latest.observedAt < oldestObservedAt) {
-        oldestObservedAt = latest.observedAt;
+    const sensor = await pedestrian.nearestSensor(mid.latitude, mid.longitude);
+    const covered = sensor.distanceMetres <= metrics.COVERAGE_RADIUS_METRES;
+
+    let crowdScore = null;
+    let street = null;
+    let hasLiveData = false;
+
+    if (covered) {
+      const latest = await pedestrian.latestCount(sensor.sensorId, sensor.source);
+      pedestrianSource = mergeSource(
+        pedestrianSource,
+        mergeSource(sensor.source, latest.source)
+      );
+      crowdScore = countToCrowdScore(latest.count);
+      hasLiveData = typeof crowdScore === "number";
+      if (hasLiveData) {
+        street = sensorStreet(sensor.name);
+        counts.push(latest.count);
+        if (latest.observedAt) {
+          if (!oldestObservedAt || latest.observedAt < oldestObservedAt) {
+            oldestObservedAt = latest.observedAt;
+          }
+        }
+        if (!seenSensors.has(sensor.sensorId)) {
+          seenSensors.add(sensor.sensorId);
+          sensorsUsed.push({
+            sensorId: sensor.sensorId,
+            name: sensor.name,
+            distanceMetres: sensor.distanceMetres,
+          });
+        }
+        if (crowdScore >= CONGESTION_POINT_SCORE) {
+          congestionPoints.push({
+            name: sensor.name,
+            latitude: mid.latitude,
+            longitude: mid.longitude,
+            crowdScore,
+          });
+        }
       }
     }
 
-    if (!seenSensors.has(sensor.sensorId)) {
-      seenSensors.add(sensor.sensorId);
-      sensorsUsed.push({
-        sensorId: sensor.sensorId,
-        name: sensor.name,
-        distanceMetres: sensor.distanceMetres,
-      });
-    }
-
-    if (typeof crowdScore === "number" && crowdScore >= CONGESTION_POINT_SCORE) {
-      congestionPoints.push({
-        name: sensor.name,
-        latitude: mid.latitude,
-        longitude: mid.longitude,
-        crowdScore,
-      });
-    }
-
-    segments.push({
+    const seg = {
       fromLatitude: from.latitude,
       fromLongitude: from.longitude,
       toLatitude: to.latitude,
       toLongitude: to.longitude,
+      lengthMetres,
+      street,
+      hasLiveData,
       crowdScore,
-    });
+    };
+    if (hasLiveData && (!peakCovered || crowdScore > peakCovered.crowdScore)) {
+      peakCovered = seg;
+    }
+    segments.push(seg);
+  }
+
+  // Historical peak score for the rating reason: the mean for the peak segment's
+  // sensor, at the departure hour and day-of-week (US1.1.2's developer step).
+  let historicalPeakScore = null;
+  if (peakCovered && sensorsUsed.length) {
+    const peakSensor =
+      sensorsUsed.find((s) => sensorStreet(s.name) === peakCovered.street) ||
+      sensorsUsed[0];
+    const { mean } = await pedestrian.hourlyMean(
+      peakSensor.sensorId,
+      dayOfWeek,
+      hour,
+      "live"
+    );
+    historicalPeakScore = countToCrowdScore(mean);
   }
 
   return {
-    segments,
-    sensorsUsed,
-    congestionPoints,
-    averageCountPerHour: counts.length
-      ? Math.round(counts.reduce((a, b) => a + b, 0) / counts.length)
-      : null,
-    dataUpdatedAt: oldestObservedAt || now.toISOString(),
     pedestrianSource: pedestrianSource || "mock",
+    candidateFields: {
+      segments,
+      sensorsUsed,
+      congestionPoints,
+      bypassedAreas: [],
+      averageCountPerHour: counts.length
+        ? Math.round(counts.reduce((a, b) => a + b, 0) / counts.length)
+        : null,
+      historicalPeakScore,
+      dataUpdatedAt: oldestObservedAt || now.toISOString(),
+    },
   };
+}
+
+// Sensor names look like "Bourke Street Mall (North)"; strip the trailing
+// direction qualifier to get a street-ish label for the rating reason.
+function sensorStreet(name) {
+  if (!name) return null;
+  return name.replace(/\s*\(.*\)\s*$/, "").trim() || null;
 }
 
 // Pick up to `max` points roughly evenly along the polyline.
@@ -279,9 +399,7 @@ function samplepoints(points, max) {
   if (points.length <= max) return points;
   const step = (points.length - 1) / (max - 1);
   const out = [];
-  for (let i = 0; i < max; i += 1) {
-    out.push(points[Math.round(i * step)]);
-  }
+  for (let i = 0; i < max; i += 1) out.push(points[Math.round(i * step)]);
   return out;
 }
 
@@ -295,16 +413,14 @@ function mergeSource(a, b) {
 // Route data provenance: geometry (Google) + scoring (pedestrian).
 function resolveDataSource(googleSource, pedestrianSource) {
   if (googleSource === "mock") return "mock";
-  // Google is live from here on.
   if (pedestrianSource === "live") return "live";
-  if (pedestrianSource == null) return "partial";
-  if (pedestrianSource === "mock") return "partial";
-  return pedestrianSource; // "partial"
+  return "partial"; // live geometry, mock/absent scoring
 }
 
 module.exports = {
   recommend,
-  assembleRoute,
+  assembleBase,
+  finalizeRoutes,
   byCalmestThenFastest,
   REFUGE_LOOKUP_MINUTES,
   CONGESTION_POINT_SCORE,

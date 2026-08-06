@@ -26,10 +26,15 @@ const RATING_MODERATE = "Moderate";
 const RATING_HIGH = "High";
 const RATING_UNKNOWN = "Unknown";
 
-// WHY 60 minutes: presenting stale crowd data as if it were current is worse
-// than saying nothing, for a user who is choosing a route specifically to avoid
-// a sensory ambush. Past this age we downgrade to "Unknown" rather than guess.
-const STALE_AFTER_MS = 60 * 60 * 1000;
+// AC 1.1.2: "If the data is older than 30 minutes, display 'Sensory data may be
+// outdated.'" So 30 minutes - not 60 - is the freshness horizon.
+//
+// NOTE on behaviour (this changed to follow the signed-off AC): stale data does
+// NOT become "Unknown". AC 1.1.2 keeps the rating visible and adds an "outdated"
+// warning. So staleness is surfaced via the route's `dataState` ("stale"),
+// while the numeric rating is still shown. "Unknown" is reserved for segments/
+// routes with no live sensor data at all (AC 1.2.1's neutral-grey state).
+const STALE_AFTER_MS = 30 * 60 * 1000;
 
 /**
  * Map a numeric crowd score (0-100) to a rating. Returns "Unknown" when the
@@ -45,27 +50,19 @@ function ratingForScore(score) {
 }
 
 /**
- * Rating that also respects data freshness. If the underlying data is older
- * than STALE_AFTER_MS (or its timestamp is missing/unparseable), we return
- * "Unknown" no matter what the number says.
+ * Is the underlying data older than the freshness horizon (or missing a usable
+ * timestamp)? Used to drive the route-level `dataState` of "stale". Kept
+ * separate from the rating, per AC 1.1.2, so a stale route still shows its
+ * colour with a warning rather than going blank.
  *
- * @param {number} score
- * @param {object} [opts]
- * @param {string|Date} [opts.dataUpdatedAt] timestamp of the underlying data
- * @param {Date} [opts.now]
+ * @param {string|Date} dataUpdatedAt
+ * @param {Date} [now]
+ * @param {number} [staleAfterMs]
  */
-function ratingForFreshScore(score, opts = {}) {
-  const now = opts.now instanceof Date ? opts.now : new Date();
-  const updated = opts.dataUpdatedAt ? new Date(opts.dataUpdatedAt) : null;
-
-  if (!updated || Number.isNaN(updated.getTime())) {
-    // No usable timestamp -> we cannot claim the data is current.
-    return score == null ? RATING_UNKNOWN : ratingForScore(score);
-  }
-  if (now.getTime() - updated.getTime() > STALE_AFTER_MS) {
-    return RATING_UNKNOWN;
-  }
-  return ratingForScore(score);
+function isStale(dataUpdatedAt, now = new Date(), staleAfterMs = STALE_AFTER_MS) {
+  const updated = dataUpdatedAt ? new Date(dataUpdatedAt) : null;
+  if (!updated || Number.isNaN(updated.getTime())) return true;
+  return now.getTime() - updated.getTime() > staleAfterMs;
 }
 
 /** Average of an array of segment crowd scores, rounded. Null for empty. */
@@ -85,6 +82,6 @@ module.exports = {
   RATING_HIGH,
   RATING_UNKNOWN,
   ratingForScore,
-  ratingForFreshScore,
+  isStale,
   meanScore,
 };

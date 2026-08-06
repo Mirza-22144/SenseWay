@@ -6,6 +6,13 @@ const {
   withinMelbourne,
 } = require("../utils/geo");
 
+// AC 1.1.1: an out-of-area location must be distinguishable from other
+// validation failures so the frontend can show its exact wording, "Please enter
+// a valid Melbourne CBD location", rather than a generic message. This is a
+// stable, documented detail string the frontend keys off (see API-CONTRACT.md).
+const OUT_OF_MELBOURNE_DETAIL = (fieldName) =>
+  `${fieldName} is outside the Melbourne CBD service area. Please enter a valid Melbourne CBD location.`;
+
 /**
  * Shared validation helpers.
  *
@@ -53,9 +60,7 @@ function validateCoordinatePair(value, fieldName, details) {
   }
 
   if (!withinMelbourne(latitude, longitude)) {
-    details.push(
-      `${fieldName} is outside the supported area (greater Melbourne).`
-    );
+    details.push(OUT_OF_MELBOURNE_DETAIL(fieldName));
     return null;
   }
 
@@ -111,6 +116,7 @@ function validateNumberInRange(value, fieldName, details, { min, max, fallback }
 }
 
 module.exports = {
+  OUT_OF_MELBOURNE_DETAIL,
   validateCoordinatePair,
   validateDepartureTime,
   validateCrowdThreshold,
