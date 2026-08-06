@@ -37,5 +37,11 @@ export default defineConfig([
         version: "detect",
       },
     },
+
+    rules: {
+      // This is a plain JS (no TypeScript) codebase and no prop-types package
+      // is set up; runtime prop validation isn't part of how this team works.
+      "react/prop-types": "off",
+    },
   },
 ]);
