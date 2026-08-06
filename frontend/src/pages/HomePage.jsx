@@ -8,8 +8,9 @@ import Banner from "../components/Banner";
 import { useGoogleMapsLoader } from "../hooks/useGoogleMapsLoader";
 import { fetchRoutes, ApiRequestError } from "../services/routesApi";
 
-// Owns all state for User Story 1.1 (search -> sensory-coded route options ->
-// select an alternative -> view sensory rating details).
+// Owns all state for User Stories 1.1 (search -> sensory-coded route options ->
+// select an alternative -> view sensory rating details) and 1.2 (congestion
+// shading, congestion summary, quieter alternative).
 export default function HomePage() {
   const { hasMapsKey, isLoaded, loadError } = useGoogleMapsLoader();
 
@@ -17,6 +18,7 @@ export default function HomePage() {
   const [destination, setDestination] = useState(null);
   const [routes, setRoutes] = useState([]);
   const [recommendedRouteId, setRecommendedRouteId] = useState(null);
+  const [quieterAlternativeRouteId, setQuieterAlternativeRouteId] = useState(null);
   const [selectedRouteId, setSelectedRouteId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [banner, setBanner] = useState(null);
@@ -37,6 +39,7 @@ export default function HomePage() {
       const fetchedRoutes = data.routes || [];
       setRoutes(fetchedRoutes);
       setRecommendedRouteId(data.recommendedRouteId);
+      setQuieterAlternativeRouteId(data.quieterAlternativeRouteId || null);
       setSelectedRouteId(data.recommendedRouteId || fetchedRoutes[0]?.routeId || null);
 
       if (fetchedRoutes.length === 0) {
@@ -47,6 +50,7 @@ export default function HomePage() {
     } catch (error) {
       setRoutes([]);
       setRecommendedRouteId(null);
+      setQuieterAlternativeRouteId(null);
       setSelectedRouteId(null);
 
       if (error instanceof ApiRequestError && error.details?.some((d) => d.includes("Melbourne CBD"))) {
@@ -93,6 +97,7 @@ export default function HomePage() {
           <RouteCardList
             routes={routes}
             recommendedRouteId={recommendedRouteId}
+            quieterAlternativeRouteId={quieterAlternativeRouteId}
             selectedRouteId={selectedRouteId}
             onSelect={setSelectedRouteId}
             onShowDetails={setModalRoute}

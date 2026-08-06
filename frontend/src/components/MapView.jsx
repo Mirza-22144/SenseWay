@@ -1,8 +1,24 @@
 import { GoogleMap, Marker, Polyline } from "@react-google-maps/api";
+import MapLegend from "./MapLegend";
 import { sensoryMeta } from "../utils/sensory";
 
-const MAP_CONTAINER_STYLE = { width: "100%", height: "420px", borderRadius: "12px" };
+const MAP_CONTAINER_STYLE = {
+  width: "100%",
+  height: "420px",
+  borderRadius: "12px 12px 0 0",
+};
 const DEFAULT_CENTER = { lat: -37.8136, lng: 144.9631 };
+
+// Standard Google Maps dashed-line recipe: hide the solid stroke, repeat a
+// short line symbol along the path instead. Used for AC 1.2.1's "no live
+// data" segments.
+const NO_DATA_ICONS = [
+  {
+    icon: { path: "M 0,-1 0,1", strokeOpacity: 1, scale: 3 },
+    offset: "0",
+    repeat: "12px",
+  },
+];
 
 function routeToPath(route) {
   const segments = route.segments || [];
@@ -14,10 +30,19 @@ function routeToPath(route) {
   return path;
 }
 
+function segmentPath(segment) {
+  return [
+    { lat: segment.fromLatitude, lng: segment.fromLongitude },
+    { lat: segment.toLatitude, lng: segment.toLongitude },
+  ];
+}
+
 // AC 1.1.1 (recommended route highlighted, thicker line) + AC 1.1.3 (selecting
-// an alternative re-highlights it and the previous route becomes a thinner
-// secondary line). Per-segment shading/legend is Story 1.2, not here — each
-// route is drawn as a single line coloured by its overall sensoryRating.
+// an alternative re-highlights it, previous route becomes a thinner secondary
+// line) + AC 1.2.1 (the selected route is shaded segment-by-segment by
+// pedestrian density, with a legend). Non-selected routes stay a single line
+// colored by their overall sensoryRating — full per-segment shading for every
+// route on screen at once would be unreadable with three routes stacked.
 export default function MapView({ hasMapsKey, isLoaded, loadError, routes, selectedRouteId, start, destination }) {
   if (!hasMapsKey) {
     return (
@@ -48,26 +73,58 @@ export default function MapView({ hasMapsKey, isLoaded, loadError, routes, selec
   }
 
   const center = start ? { lat: start.latitude, lng: start.longitude } : DEFAULT_CENTER;
+  const selectedRoute = routes.find((route) => route.routeId === selectedRouteId) || null;
 
   return (
-    <GoogleMap mapContainerStyle={MAP_CONTAINER_STYLE} center={center} zoom={15}>
-      {start && <Marker position={{ lat: start.latitude, lng: start.longitude }} label="A" />}
-      {destination && <Marker position={{ lat: destination.latitude, lng: destination.longitude }} label="B" />}
-      {routes.map((route) => {
-        const isSelected = route.routeId === selectedRouteId;
-        return (
-          <Polyline
-            key={route.routeId}
-            path={routeToPath(route)}
-            options={{
-              strokeColor: sensoryMeta(route.sensoryRating).mapColor,
-              strokeWeight: isSelected ? 6 : 3,
-              strokeOpacity: isSelected ? 0.95 : 0.5,
-              zIndex: isSelected ? 2 : 1,
-            }}
-          />
-        );
-      })}
-    </GoogleMap>
+    <div>
+      <GoogleMap mapContainerStyle={MAP_CONTAINER_STYLE} center={center} zoom={15}>
+        {start && <Marker position={{ lat: start.latitude, lng: start.longitude }} label="A" />}
+        {destination && <Marker position={{ lat: destination.latitude, lng: destination.longitude }} label="B" />}
+
+        {routes
+          .filter((route) => route.routeId !== selectedRouteId)
+          .map((route) => (
+            <Polyline
+              key={route.routeId}
+              path={routeToPath(route)}
+              options={{
+                strokeColor: sensoryMeta(route.sensoryRating).mapColor,
+                strokeWeight: 3,
+                strokeOpacity: 0.5,
+                zIndex: 1,
+              }}
+            />
+          ))}
+
+        {selectedRoute &&
+          (selectedRoute.segments || []).map((segment) => (
+            <Polyline
+              key={segment.segmentId}
+              path={segmentPath(segment)}
+              options={
+                segment.hasLiveData
+                  ? {
+                      strokeColor: sensoryMeta(segment.sensoryRating).mapColor,
+                      strokeWeight: 6,
+                      strokeOpacity: 0.95,
+                      zIndex: 2,
+                    }
+                  : {
+                      strokeColor: sensoryMeta("Unknown").mapColor,
+                      strokeOpacity: 0,
+                      strokeWeight: 6,
+                      icons: NO_DATA_ICONS,
+                      zIndex: 2,
+                    }
+              }
+            />
+          ))}
+      </GoogleMap>
+      <MapLegend />
+
+      {selectedRoute?.sensorCoverage === "none" && (
+        <p className="mt-2 text-xs text-slate-500">Our sensor network does not cover this route.</p>
+      )}
+    </div>
   );
 }

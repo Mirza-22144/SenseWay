@@ -1,6 +1,13 @@
 import RouteCard from "./RouteCard";
 
-export default function RouteCardList({ routes, recommendedRouteId, selectedRouteId, onSelect, onShowDetails }) {
+export default function RouteCardList({
+  routes,
+  recommendedRouteId,
+  quieterAlternativeRouteId,
+  selectedRouteId,
+  onSelect,
+  onShowDetails,
+}) {
   if (!routes || routes.length === 0) return null;
 
   return (
@@ -10,6 +17,7 @@ export default function RouteCardList({ routes, recommendedRouteId, selectedRout
           key={route.routeId}
           route={route}
           isRecommended={route.routeId === recommendedRouteId}
+          isQuieterAlternative={route.routeId === quieterAlternativeRouteId}
           isSelected={route.routeId === selectedRouteId}
           onSelect={onSelect}
           onShowDetails={onShowDetails}
