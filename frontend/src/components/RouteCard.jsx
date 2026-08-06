@@ -6,8 +6,11 @@ import { formatDistance, formatDuration } from "../utils/format";
 // modal, so its click must not also select the route. The card itself can't be
 // a <button> because it contains another real button, so it's a div with the
 // button role instead.
-export default function RouteCard({ route, isRecommended, isSelected, onSelect, onShowDetails }) {
+export default function RouteCard({ route, isRecommended, isQuieterAlternative, isSelected, onSelect, onShowDetails }) {
   const dataUnavailable = route.dataState === "unavailable";
+  // AC 1.2.3: backend allows the quieter alternative to equal the recommended
+  // route; showing both pills on the same card would be redundant.
+  const showQuieterPill = isQuieterAlternative && !isRecommended;
 
   return (
     <div
@@ -34,11 +37,19 @@ export default function RouteCard({ route, isRecommended, isSelected, onSelect, 
               Recommended
             </span>
           )}
+          {showQuieterPill && (
+            <span className="mb-1 inline-block rounded-full bg-emerald-600 px-2 py-0.5 text-[11px] font-semibold text-white">
+              Quieter alternative
+            </span>
+          )}
           <p className="font-medium text-slate-900">{route.summary}</p>
           <p className="text-sm text-slate-500">
             {formatDuration(route.durationMinutes)} · {formatDistance(route.distanceMetres)}
             {route.minutesSlowerThanFastest > 0 && (
               <> · +{route.minutesSlowerThanFastest} min vs fastest</>
+            )}
+            {showQuieterPill && route.highCrowdDistanceSavedMetres > 0 && (
+              <> · avoids {formatDistance(route.highCrowdDistanceSavedMetres)} of high-crowd area</>
             )}
           </p>
         </div>
