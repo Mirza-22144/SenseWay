@@ -203,9 +203,10 @@ quarters. No ML, no trend fitting — it's the simplest thing we can defend.
 - **The count→score scaling is a rough calibration**, not a statistically
   derived threshold. `PEAK_REFERENCE_COUNT` should be tuned per sensor once we
   have more data.
-- **Hour bucketing uses the server's local time zone.** For correctness this
-  should be pinned to Melbourne (Australia/Melbourne) regardless of where the
-  server runs — a known follow-up.
+- **Hour/day bucketing is pinned to Melbourne** (`Australia/Melbourne`, DST-aware
+  via `Intl`, constant `MELBOURNE_TZ` in `src/utils/time.js`), because the
+  pedestrian data is recorded in Melbourne local time and Cloud Run runs in UTC.
+  A `TZ=UTC` test guards against any regression to server-local time.
 - **Every 15 minutes within an hour share that hour's mean**, so intra-hour
   changes are flat. Fine for a departure-time slider at this fidelity.
 
@@ -283,5 +284,8 @@ Also awaiting non-config answers:
    i.e. a public, unauthenticated endpoint that writes to our database. (The
    password shown is the placeholder `PASSWORD`, not a real secret.) Can we drop
    the IP from the README and put auth on the deployed endpoint?
-5. **Forecast time zone.** Pin hour bucketing to Australia/Melbourne? (See
-   forecast limitations.)
+5. **Forecast time zone — resolved, one assumption to confirm.** Hour/day
+   bucketing is now pinned to `Australia/Melbourne` (DST-aware). This assumes the
+   pipeline stores `Sensing_Date`/`HourDay` as **Melbourne local** values (which
+   matches how City of Melbourne publishes the data). Please confirm the pipeline
+   doesn't convert to UTC on ingest.

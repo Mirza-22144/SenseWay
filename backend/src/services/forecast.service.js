@@ -3,7 +3,7 @@
 const pedestrian = require("./pedestrian.service");
 const scoring = require("./scoring.service");
 const { countToCrowdScore } = require("../utils/crowd");
-const { quarterHourSteps } = require("../utils/time");
+const { quarterHourSteps, melbourneParts } = require("../utils/time");
 
 /**
  * Predictive hourly crowding forecast (US2.2).
@@ -33,8 +33,10 @@ async function forecast(request) {
   // Fetch the historical mean for each interval's day-of-week + hour.
   const raw = [];
   for (const start of steps) {
-    const dow = start.getDay(); // 0=Sun..6=Sat, matches Postgres EXTRACT(DOW)
-    const hour = start.getHours();
+    // Bucket by MELBOURNE wall clock, not the server's zone. The pedestrian data
+    // is recorded in Melbourne local time and Cloud Run runs in UTC, so using
+    // start.getDay()/getHours() here would be silently wrong in production.
+    const { dayOfWeek: dow, hour } = melbourneParts(start);
     const { mean, sampleSize } = await pedestrian.hourlyMean(
       sensor.sensorId,
       dow,
