@@ -3,6 +3,7 @@ import RouteCard from "./RouteCard";
 export default function RouteCardList({
   routes,
   recommendedRouteId,
+  fastestRouteId,
   quieterAlternativeRouteId,
   selectedRouteId,
   onSelect,
@@ -11,13 +12,14 @@ export default function RouteCardList({
   if (!routes || routes.length === 0) return null;
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-4">
       {routes.map((route) => (
         <RouteCard
           key={route.routeId}
           route={route}
-          isRecommended={route.routeId === recommendedRouteId}
-          isQuieterAlternative={route.routeId === quieterAlternativeRouteId}
+          recommendedRouteId={recommendedRouteId}
+          fastestRouteId={fastestRouteId}
+          quieterAlternativeRouteId={quieterAlternativeRouteId}
           isSelected={route.routeId === selectedRouteId}
           onSelect={onSelect}
           onShowDetails={onShowDetails}

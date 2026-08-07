@@ -1,4 +1,39 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap");
 @import "tailwindcss";
+
+/* Design tokens pulled from the Figma file (Senseway - IE). "-ink" suffix
+   marks the darker, text-safe variant of a color also used as a background. */
+@theme {
+  --color-base: #ffffff;
+  --color-subtle: #eef1f5;
+  --color-inverse: #ffffff;
+  --color-line: #dde3eb;
+
+  --color-brand: #2e5aac;
+  --color-brand-subtle: #f0f5fb;
+  --color-brand-ink: #234787;
+  --color-logo: #00a2c3;
+
+  --color-primary: #171b24;
+  --color-secondary: #4f5967;
+  --color-muted: #6e7887;
+
+  --color-success: #2e7050;
+  --color-success-subtle: #eff7f3;
+  --color-success-ink: #235640;
+
+  --color-warning: #d97706;
+  --color-warning-subtle: #fef3c7;
+  --color-warning-ink: #92400e;
+
+  --color-danger: #b91c1c;
+  --color-danger-subtle: #fee2e2;
+  --color-danger-ink: #991b1b;
+
+  --shadow-card: 0px 2px 4px rgba(23, 28, 36, 0.04);
+  --shadow-panel: 0px 4px 6px rgba(23, 28, 36, 0.08);
+  --shadow-modal: 0px 24px 48px rgba(23, 28, 36, 0.16);
+}
 
 :root {
   color-scheme: light;
@@ -6,7 +41,7 @@
 
 body {
   margin: 0;
-  font-family: system-ui, "Segoe UI", Roboto, sans-serif;
-  background: #f7f7f5;
-  color: #2a2733;
+  font-family: "Inter", system-ui, "Segoe UI", Roboto, sans-serif;
+  background: var(--color-subtle);
+  color: var(--color-primary);
 }

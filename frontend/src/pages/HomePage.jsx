@@ -3,6 +3,7 @@ import SearchBar from "../components/SearchBar";
 import MapView from "../components/MapView";
 import RouteCardList from "../components/RouteCardList";
 import RouteSummary from "../components/RouteSummary";
+import CongestionSummary from "../components/CongestionSummary";
 import SensoryDetailsModal from "../components/SensoryDetailsModal";
 import Banner from "../components/Banner";
 import { useGoogleMapsLoader } from "../hooks/useGoogleMapsLoader";
@@ -10,7 +11,9 @@ import { fetchRoutes, ApiRequestError } from "../services/routesApi";
 
 // Owns all state for User Stories 1.1 (search -> sensory-coded route options ->
 // select an alternative -> view sensory rating details) and 1.2 (congestion
-// shading, congestion summary, quieter alternative).
+// shading, congestion summary, quieter alternative). Layout matches the
+// Figma "Home / Sensory Route Planning" and "Congested Corridor
+// Visualisation" frames: a two-column body under a page header.
 export default function HomePage() {
   const { hasMapsKey, isLoaded, loadError } = useGoogleMapsLoader();
 
@@ -18,6 +21,7 @@ export default function HomePage() {
   const [destination, setDestination] = useState(null);
   const [routes, setRoutes] = useState([]);
   const [recommendedRouteId, setRecommendedRouteId] = useState(null);
+  const [fastestRouteId, setFastestRouteId] = useState(null);
   const [quieterAlternativeRouteId, setQuieterAlternativeRouteId] = useState(null);
   const [selectedRouteId, setSelectedRouteId] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -39,6 +43,7 @@ export default function HomePage() {
       const fetchedRoutes = data.routes || [];
       setRoutes(fetchedRoutes);
       setRecommendedRouteId(data.recommendedRouteId);
+      setFastestRouteId(data.fastestRouteId || null);
       setQuieterAlternativeRouteId(data.quieterAlternativeRouteId || null);
       setSelectedRouteId(data.recommendedRouteId || fetchedRoutes[0]?.routeId || null);
 
@@ -50,6 +55,7 @@ export default function HomePage() {
     } catch (error) {
       setRoutes([]);
       setRecommendedRouteId(null);
+      setFastestRouteId(null);
       setQuieterAlternativeRouteId(null);
       setSelectedRouteId(null);
 
@@ -66,44 +72,66 @@ export default function HomePage() {
   }
 
   const selectedRoute = routes.find((route) => route.routeId === selectedRouteId) || null;
+  const statusIds = { recommendedRouteId, fastestRouteId, quieterAlternativeRouteId };
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-4 px-4">
-      <SearchBar
-        hasMapsKey={hasMapsKey}
-        isLoaded={isLoaded}
-        start={start}
-        destination={destination}
-        onChangeStart={setStart}
-        onChangeDestination={setDestination}
-        onFindRoute={handleFindRoute}
-        loading={loading}
-      />
+    <div className="mx-auto flex max-w-[1440px] flex-col gap-8 px-16 py-8">
+      <div className="flex flex-col gap-2">
+        <h1 className="text-3xl font-semibold text-primary">Plan Your Route</h1>
+        <p className="text-base text-secondary">Find a lower-sensory route across Melbourne CBD.</p>
+      </div>
 
-      {banner && <Banner variant={banner.variant}>{banner.text}</Banner>}
-
-      {routes.length > 0 && (
-        <>
-          <MapView
+      <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
+        <div className="flex w-full flex-col gap-5 lg:w-[540px] lg:shrink-0">
+          <SearchBar
             hasMapsKey={hasMapsKey}
             isLoaded={isLoaded}
-            loadError={loadError}
-            routes={routes}
-            selectedRouteId={selectedRouteId}
             start={start}
             destination={destination}
+            onChangeStart={setStart}
+            onChangeDestination={setDestination}
+            onFindRoute={handleFindRoute}
+            loading={loading}
           />
-          <RouteSummary route={selectedRoute} />
-          <RouteCardList
-            routes={routes}
-            recommendedRouteId={recommendedRouteId}
-            quieterAlternativeRouteId={quieterAlternativeRouteId}
-            selectedRouteId={selectedRouteId}
-            onSelect={setSelectedRouteId}
-            onShowDetails={setModalRoute}
-          />
-        </>
-      )}
+
+          {banner && <Banner variant={banner.variant}>{banner.text}</Banner>}
+
+          {routes.length > 0 && (
+            <>
+              <p className="text-sm font-medium text-muted">ROUTE OPTIONS</p>
+              <CongestionSummary route={selectedRoute} />
+              <RouteCardList
+                routes={routes}
+                recommendedRouteId={recommendedRouteId}
+                fastestRouteId={fastestRouteId}
+                quieterAlternativeRouteId={quieterAlternativeRouteId}
+                selectedRouteId={selectedRouteId}
+                onSelect={setSelectedRouteId}
+                onShowDetails={setModalRoute}
+              />
+            </>
+          )}
+        </div>
+
+        {routes.length > 0 && (
+          <div className="flex w-full flex-col gap-5">
+            <h2 className="text-xl font-semibold text-primary">Congestion Map</h2>
+            <Banner variant="brand">
+              Current pedestrian density is based on City of Melbourne live sensor data.
+            </Banner>
+            <MapView
+              hasMapsKey={hasMapsKey}
+              isLoaded={isLoaded}
+              loadError={loadError}
+              routes={routes}
+              selectedRouteId={selectedRouteId}
+              start={start}
+              destination={destination}
+            />
+            <RouteSummary route={selectedRoute} {...statusIds} />
+          </div>
+        )}
+      </div>
 
       <SensoryDetailsModal route={modalRoute} onClose={() => setModalRoute(null)} />
     </div>

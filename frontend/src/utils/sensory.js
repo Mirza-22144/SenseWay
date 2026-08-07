@@ -1,29 +1,34 @@
 // Single source of truth for how each sensory rating is represented in the UI
-// (route cards, badges, map polylines). Vocabulary matches the backend exactly:
+// (chips, map legend, map polylines). Vocabulary matches the backend exactly:
 // Low / Moderate / High / Unknown (see backend/src/services/scoring.service.js).
+// Values match the Figma design tokens (Senseway - IE).
 export const SENSORY_META = Object.freeze({
   Low: {
     label: "Low",
-    badgeClass: "bg-emerald-100 text-emerald-800 border-emerald-300",
-    dotClass: "bg-emerald-500",
-    mapColor: "#16a34a",
+    chipClass: "bg-success-subtle text-success-ink",
+    textClass: "text-success-ink",
+    dotClass: "bg-success",
+    mapColor: "#2e7050",
   },
   Moderate: {
     label: "Moderate",
-    badgeClass: "bg-amber-100 text-amber-800 border-amber-300",
-    dotClass: "bg-amber-500",
+    chipClass: "bg-warning-subtle text-warning-ink",
+    textClass: "text-warning-ink",
+    dotClass: "bg-warning",
     mapColor: "#d97706",
   },
   High: {
     label: "High",
-    badgeClass: "bg-rose-100 text-rose-800 border-rose-300",
-    dotClass: "bg-rose-500",
-    mapColor: "#dc2626",
+    chipClass: "bg-danger-subtle text-danger-ink",
+    textClass: "text-danger-ink",
+    dotClass: "bg-danger",
+    mapColor: "#b91c1c",
   },
   Unknown: {
     label: "Unknown",
-    badgeClass: "bg-slate-100 text-slate-600 border-slate-300",
-    dotClass: "bg-slate-400",
+    chipClass: "bg-subtle text-muted",
+    textClass: "text-muted",
+    dotClass: "bg-subtle border border-line",
     mapColor: "#94a3b8",
   },
 });

@@ -4,8 +4,8 @@ import { sensoryMeta } from "../utils/sensory";
 
 const MAP_CONTAINER_STYLE = {
   width: "100%",
-  height: "420px",
-  borderRadius: "12px 12px 0 0",
+  height: "460px",
+  borderRadius: "12px",
 };
 const DEFAULT_CENTER = { lat: -37.8136, lng: 144.9631 };
 
@@ -46,9 +46,9 @@ function segmentPath(segment) {
 export default function MapView({ hasMapsKey, isLoaded, loadError, routes, selectedRouteId, start, destination }) {
   if (!hasMapsKey) {
     return (
-      <div className="flex h-[420px] w-full flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
-        <p className="text-sm font-medium text-slate-600">Map preview needs a Google Maps API key</p>
-        <p className="mt-1 max-w-sm text-xs text-slate-400">
+      <div className="flex h-[460px] w-full flex-col items-center justify-center rounded-xl border border-dashed border-line bg-base p-6 text-center">
+        <p className="text-sm font-medium text-secondary">Map preview needs a Google Maps API key</p>
+        <p className="mt-1 max-w-sm text-xs text-muted">
           Add VITE_GOOGLE_MAPS_API_KEY in frontend/.env to see routes plotted on a live map. Route
           details are still available in the cards below.
         </p>
@@ -58,7 +58,7 @@ export default function MapView({ hasMapsKey, isLoaded, loadError, routes, selec
 
   if (loadError) {
     return (
-      <div className="flex h-[420px] items-center justify-center rounded-xl border border-rose-200 bg-rose-50 text-sm text-rose-700">
+      <div className="flex h-[460px] items-center justify-center rounded-xl border border-danger-subtle bg-danger-subtle text-sm text-danger-ink">
         Unable to display map. Please refresh the page.
       </div>
     );
@@ -66,7 +66,7 @@ export default function MapView({ hasMapsKey, isLoaded, loadError, routes, selec
 
   if (!isLoaded) {
     return (
-      <div className="flex h-[420px] items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-500">
+      <div className="flex h-[460px] items-center justify-center rounded-xl border border-line bg-base text-sm text-secondary">
         Loading map…
       </div>
     );
@@ -77,53 +77,58 @@ export default function MapView({ hasMapsKey, isLoaded, loadError, routes, selec
 
   return (
     <div>
-      <GoogleMap mapContainerStyle={MAP_CONTAINER_STYLE} center={center} zoom={15}>
-        {start && <Marker position={{ lat: start.latitude, lng: start.longitude }} label="A" />}
-        {destination && <Marker position={{ lat: destination.latitude, lng: destination.longitude }} label="B" />}
+      <div className="relative">
+        <GoogleMap mapContainerStyle={MAP_CONTAINER_STYLE} center={center} zoom={15}>
+          {start && <Marker position={{ lat: start.latitude, lng: start.longitude }} label="A" />}
+          {destination && <Marker position={{ lat: destination.latitude, lng: destination.longitude }} label="B" />}
 
-        {routes
-          .filter((route) => route.routeId !== selectedRouteId)
-          .map((route) => (
-            <Polyline
-              key={route.routeId}
-              path={routeToPath(route)}
-              options={{
-                strokeColor: sensoryMeta(route.sensoryRating).mapColor,
-                strokeWeight: 3,
-                strokeOpacity: 0.5,
-                zIndex: 1,
-              }}
-            />
-          ))}
+          {routes
+            .filter((route) => route.routeId !== selectedRouteId)
+            .map((route) => (
+              <Polyline
+                key={route.routeId}
+                path={routeToPath(route)}
+                options={{
+                  strokeColor: sensoryMeta(route.sensoryRating).mapColor,
+                  strokeWeight: 3,
+                  strokeOpacity: 0.5,
+                  zIndex: 1,
+                }}
+              />
+            ))}
 
-        {selectedRoute &&
-          (selectedRoute.segments || []).map((segment) => (
-            <Polyline
-              key={segment.segmentId}
-              path={segmentPath(segment)}
-              options={
-                segment.hasLiveData
-                  ? {
-                      strokeColor: sensoryMeta(segment.sensoryRating).mapColor,
-                      strokeWeight: 6,
-                      strokeOpacity: 0.95,
-                      zIndex: 2,
-                    }
-                  : {
-                      strokeColor: sensoryMeta("Unknown").mapColor,
-                      strokeOpacity: 0,
-                      strokeWeight: 6,
-                      icons: NO_DATA_ICONS,
-                      zIndex: 2,
-                    }
-              }
-            />
-          ))}
-      </GoogleMap>
-      <MapLegend />
+          {selectedRoute &&
+            (selectedRoute.segments || []).map((segment) => (
+              <Polyline
+                key={segment.segmentId}
+                path={segmentPath(segment)}
+                options={
+                  segment.hasLiveData
+                    ? {
+                        strokeColor: sensoryMeta(segment.sensoryRating).mapColor,
+                        strokeWeight: 6,
+                        strokeOpacity: 0.95,
+                        zIndex: 2,
+                      }
+                    : {
+                        strokeColor: sensoryMeta("Unknown").mapColor,
+                        strokeOpacity: 0,
+                        strokeWeight: 6,
+                        icons: NO_DATA_ICONS,
+                        zIndex: 2,
+                      }
+                }
+              />
+            ))}
+        </GoogleMap>
+
+        <div className="absolute right-4 top-4">
+          <MapLegend />
+        </div>
+      </div>
 
       {selectedRoute?.sensorCoverage === "none" && (
-        <p className="mt-2 text-xs text-slate-500">Our sensor network does not cover this route.</p>
+        <p className="mt-2 text-xs text-muted">Our sensor network does not cover this route.</p>
       )}
     </div>
   );
