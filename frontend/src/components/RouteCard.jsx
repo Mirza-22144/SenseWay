@@ -1,81 +1,88 @@
 import SensoryBadge from "./SensoryBadge";
 import { formatDistance, formatDuration } from "../utils/format";
+import { routeStatusLabel } from "../utils/routeStatus";
+
+const BADGE_CLASS = {
+  Recommended: "bg-success text-inverse",
+  Alternative: "bg-subtle text-secondary",
+  Fastest: "bg-subtle text-secondary",
+};
+
+function statusBadge(route, ids) {
+  const text = routeStatusLabel(route, ids);
+  // The quieter alternative gets the same label text ("Alternative") as a
+  // plain non-recommended route, but highlighted green like Recommended.
+  const isQuieterAlternative = text === "Alternative" && route.routeId === ids.quieterAlternativeRouteId;
+  return { text, className: isQuieterAlternative ? "bg-success text-inverse" : BADGE_CLASS[text] };
+}
 
 // AC 1.1.1 (colour-coded route options) + AC 1.1.3 (select an alternative
-// route). The sensory badge is a separate click target for AC 1.1.2's details
-// modal, so its click must not also select the route. The card itself can't be
-// a <button> because it contains another real button, so it's a div with the
-// button role instead.
-export default function RouteCard({ route, isRecommended, isQuieterAlternative, isSelected, onSelect, onShowDetails }) {
+// route, via the "View Route" button) + AC 1.2.3 (quieter-alternative
+// labeling). Matches the Figma "Route Card" component structure: status
+// badge, title, sensory chip + reason, 3-column metrics, full-width button.
+export default function RouteCard({
+  route,
+  isSelected,
+  fastestRouteId,
+  recommendedRouteId,
+  quieterAlternativeRouteId,
+  onSelect,
+  onShowDetails,
+}) {
   const dataUnavailable = route.dataState === "unavailable";
-  // AC 1.2.3: backend allows the quieter alternative to equal the recommended
-  // route; showing both pills on the same card would be redundant.
-  const showQuieterPill = isQuieterAlternative && !isRecommended;
+  const badge = statusBadge(route, { recommendedRouteId, fastestRouteId, quieterAlternativeRouteId });
 
   return (
     <div
-      role="button"
-      tabIndex={0}
-      onClick={() => onSelect(route.routeId)}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onSelect(route.routeId);
-        }
-      }}
-      aria-pressed={isSelected}
-      className={`w-full cursor-pointer rounded-xl border p-4 text-left transition ${
-        isSelected
-          ? "border-violet-400 bg-violet-50 ring-1 ring-violet-300"
-          : "border-slate-200 bg-white hover:border-slate-300"
+      className={`flex w-full flex-col gap-5 rounded-xl border bg-base p-6 shadow-card ${
+        isSelected ? "border-2 border-brand" : "border-line"
       }`}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          {isRecommended && (
-            <span className="mb-1 inline-block rounded-full bg-violet-600 px-2 py-0.5 text-[11px] font-semibold text-white">
-              Recommended
-            </span>
-          )}
-          {showQuieterPill && (
-            <span className="mb-1 inline-block rounded-full bg-emerald-600 px-2 py-0.5 text-[11px] font-semibold text-white">
-              Quieter alternative
-            </span>
-          )}
-          <p className="font-medium text-slate-900">{route.summary}</p>
-          <p className="text-sm text-slate-500">
-            {formatDuration(route.durationMinutes)} · {formatDistance(route.distanceMetres)}
-            {route.minutesSlowerThanFastest > 0 && (
-              <> · +{route.minutesSlowerThanFastest} min vs fastest</>
-            )}
-            {showQuieterPill && route.highCrowdDistanceSavedMetres > 0 && (
-              <> · avoids {formatDistance(route.highCrowdDistanceSavedMetres)} of high-crowd area</>
-            )}
-          </p>
-        </div>
-
-        {dataUnavailable ? (
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              onShowDetails(route);
-            }}
-            className="shrink-0 rounded-full border border-slate-300 bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600"
-          >
-            Sensory data unavailable
-          </button>
-        ) : (
-          <span
-            onClick={(event) => {
-              event.stopPropagation();
-            }}
-            className="shrink-0"
-          >
-            <SensoryBadge rating={route.sensoryRating} onClick={() => onShowDetails(route)} />
-          </span>
-        )}
+      <div className="flex flex-col gap-1.5">
+        <span className={`inline-block w-fit rounded px-2 py-0.5 text-xs font-medium ${badge.className}`}>
+          {badge.text.toUpperCase()}
+        </span>
+        <p className="text-lg font-semibold text-primary">{route.summary}</p>
       </div>
+
+      {dataUnavailable ? (
+        <button
+          type="button"
+          onClick={() => onShowDetails(route)}
+          className="w-fit cursor-pointer rounded-full bg-subtle px-3 py-1 text-xs font-medium text-muted"
+        >
+          Sensory data unavailable
+        </button>
+      ) : (
+        <div>
+          <SensoryBadge rating={route.sensoryRating} showSuffix onClick={() => onShowDetails(route)} />
+          <p className="mt-2 text-xs text-secondary">{route.ratingReason}</p>
+        </div>
+      )}
+
+      <div className="flex gap-6">
+        <div className="flex flex-col gap-1">
+          <p className="text-xs font-medium text-muted">DISTANCE</p>
+          <p className="text-lg font-semibold text-primary">{formatDistance(route.distanceMetres)}</p>
+        </div>
+        <div className="flex flex-col gap-1">
+          <p className="text-xs font-medium text-muted">WALK</p>
+          <p className="text-lg font-semibold text-primary">{formatDuration(route.durationMinutes)}</p>
+        </div>
+        <div className="flex flex-col gap-1">
+          <p className="text-xs font-medium text-muted">SENSORY</p>
+          <p className="text-lg font-semibold text-primary">{route.sensoryRating}</p>
+        </div>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => onSelect(route.routeId)}
+        aria-pressed={isSelected}
+        className="w-full cursor-pointer rounded-lg bg-brand py-3 text-sm font-semibold text-inverse hover:brightness-95"
+      >
+        View Route
+      </button>
     </div>
   );
 }

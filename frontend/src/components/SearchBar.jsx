@@ -3,7 +3,7 @@ import { Autocomplete } from "@react-google-maps/api";
 import { MELBOURNE_BOUNDS, isWithinMelbourne } from "../constants/melbourne";
 import { MELBOURNE_PLACES } from "../data/mockPlaces";
 
-const FIELD_CLASS = "w-full rounded-lg border border-slate-300 px-3 py-2 text-sm";
+const FIELD_CLASS = "h-[50px] w-full rounded-lg border border-line bg-base px-4 py-3 text-sm text-primary";
 
 // A start/destination field. Renders real Google Places Autocomplete
 // (Melbourne-bounded) once a Maps API key is configured; otherwise falls back
@@ -38,8 +38,8 @@ function LocationField({ id, labelText, value, onChange, hasMapsKey, isLoaded })
       west: MELBOURNE_BOUNDS.lonMin,
     };
     return (
-      <div>
-        <label htmlFor={id} className="mb-1 block text-sm font-medium text-slate-700">
+      <div className="flex flex-col gap-2">
+        <label htmlFor={id} className="text-sm font-medium text-primary">
           {labelText}
         </label>
         <Autocomplete
@@ -58,14 +58,14 @@ function LocationField({ id, labelText, value, onChange, hasMapsKey, isLoaded })
             className={FIELD_CLASS}
           />
         </Autocomplete>
-        {error && <p className="mt-1 text-xs text-rose-600">{error}</p>}
+        {error && <p className="text-xs text-danger-ink">{error}</p>}
       </div>
     );
   }
 
   return (
-    <div>
-      <label htmlFor={id} className="mb-1 block text-sm font-medium text-slate-700">
+    <div className="flex flex-col gap-2">
+      <label htmlFor={id} className="text-sm font-medium text-primary">
         {labelText}
       </label>
       <select
@@ -93,7 +93,8 @@ function LocationField({ id, labelText, value, onChange, hasMapsKey, isLoaded })
   );
 }
 
-// AC 1.1.1: start/destination search + Find Route button.
+// AC 1.1.1: start/destination search + Find Route button. Matches the Figma
+// "Search" card (node 71:1018): fields stacked vertically inside a white card.
 export default function SearchBar({
   hasMapsKey,
   isLoaded,
@@ -132,48 +133,42 @@ export default function SearchBar({
   const canFindRoute = Boolean(start && destination) && !loading;
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div>
-          <LocationField
-            id="start-location"
-            labelText="Start location"
-            value={start}
-            onChange={onChangeStart}
-            hasMapsKey={hasMapsKey}
-            isLoaded={isLoaded}
-          />
-          <button
-            type="button"
-            onClick={useCurrentLocation}
-            className="mt-1 text-xs font-medium text-violet-700 hover:underline"
-          >
-            Use my current location
-          </button>
-          {geoError && <p className="mt-1 text-xs text-rose-600">{geoError}</p>}
-        </div>
-
+    <div className="flex flex-col gap-5 rounded-xl border border-line bg-base p-6">
+      <div className="flex flex-col gap-1">
         <LocationField
-          id="destination-location"
-          labelText="Destination"
-          value={destination}
-          onChange={onChangeDestination}
+          id="start-location"
+          labelText="Start Location"
+          value={start}
+          onChange={onChangeStart}
           hasMapsKey={hasMapsKey}
           isLoaded={isLoaded}
         />
+        <button type="button" onClick={useCurrentLocation} className="mt-1 w-fit cursor-pointer text-xs font-medium text-brand-ink hover:underline">
+          Use my current location
+        </button>
+        {geoError && <p className="text-xs text-danger-ink">{geoError}</p>}
       </div>
+
+      <LocationField
+        id="destination-location"
+        labelText="Destination"
+        value={destination}
+        onChange={onChangeDestination}
+        hasMapsKey={hasMapsKey}
+        isLoaded={isLoaded}
+      />
 
       <button
         type="button"
         onClick={onFindRoute}
         disabled={!canFindRoute}
-        className="mt-4 w-full rounded-lg bg-violet-600 py-2 text-sm font-semibold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+        className="w-full cursor-pointer rounded-lg bg-brand py-3 text-sm font-semibold text-inverse hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {loading ? "Finding route…" : "Find Route"}
       </button>
 
       {!hasMapsKey && (
-        <p className="mt-2 text-xs text-slate-400">
+        <p className="text-xs text-muted">
           Address search needs a Google Maps API key — using the built-in Melbourne CBD location picker for now.
         </p>
       )}
