@@ -4,7 +4,10 @@ import RefugeCardList from "../components/RefugeCardList";
 import RefugeMap from "../components/RefugeMap";
 import RefugeDetailsModal from "../components/RefugeDetailsModal";
 import MapView from "../components/MapView";
+import RouteCardList from "../components/RouteCardList";
 import RouteSummary from "../components/RouteSummary";
+import SensoryDetailsModal from "../components/SensoryDetailsModal";
+import TurnByTurnModal from "../components/TurnByTurnModal";
 import Banner from "../components/Banner";
 import { useGoogleMapsLoader } from "../hooks/useGoogleMapsLoader";
 import { fetchNearbyRefuges } from "../services/refugesApi";
@@ -23,18 +26,22 @@ export default function RefugeFinderPage() {
   const [selectedRefugeId, setSelectedRefugeId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [banner, setBanner] = useState(null);
+  const [hasSearched, setHasSearched] = useState(false);
   const [modalRefuge, setModalRefuge] = useState(null);
 
   // Directions sub-view (AC 2.1.3)
   const [mode, setMode] = useState("search"); // "search" | "directions"
   const [directions, setDirections] = useState(null); // { routes, recommendedRouteId, fastestRouteId, quieterAlternativeRouteId, selectedRouteId, destinationRefuge }
   const [directionsLoading, setDirectionsLoading] = useState(false);
+  const [navigationRoute, setNavigationRoute] = useState(null);
+  const [modalRoute, setModalRoute] = useState(null);
 
   async function handleFindRefuges() {
     if (!origin) return;
     setLoading(true);
     setBanner(null);
     setSelectedRefugeId(null);
+    setHasSearched(true);
 
     try {
       const data = await fetchNearbyRefuges({
@@ -42,11 +49,7 @@ export default function RefugeFinderPage() {
         longitude: origin.longitude,
         walkingMinutes,
       });
-      const fetchedRefuges = data.refuges || [];
-      setRefuges(fetchedRefuges);
-      if (fetchedRefuges.length === 0) {
-        setBanner({ variant: "warning", text: "No nearby sensory refuges found." });
-      }
+      setRefuges(data.refuges || []);
     } catch (error) {
       setRefuges([]);
       if (error instanceof ApiRequestError) {
@@ -87,7 +90,10 @@ export default function RefugeFinderPage() {
         recommendedRouteId: data.recommendedRouteId,
         fastestRouteId: data.fastestRouteId || null,
         quieterAlternativeRouteId: data.quieterAlternativeRouteId || null,
-        selectedRouteId: data.recommendedRouteId || fetchedRoutes[0]?.routeId || null,
+        // Nothing pre-selected: show every route (Low/Moderate/High) on the
+        // map first, matching the Home page flow — the user picks one before
+        // it's highlighted or Get Navigation becomes available.
+        selectedRouteId: null,
         destinationRefuge: refuge,
         destinationPoint,
       });
@@ -102,6 +108,10 @@ export default function RefugeFinderPage() {
     } finally {
       setDirectionsLoading(false);
     }
+  }
+
+  function handleSelectDirectionsRoute(routeId) {
+    setDirections((prev) => (prev ? { ...prev, selectedRouteId: routeId } : prev));
   }
 
   function handleBack() {
@@ -132,24 +142,47 @@ export default function RefugeFinderPage() {
         {banner && <Banner variant={banner.variant}>{banner.text}</Banner>}
 
         {directions.routes.length > 0 && (
-          <div className="flex flex-col gap-5">
-            <MapView
-              hasMapsKey={hasMapsKey}
-              isLoaded={isLoaded}
-              loadError={loadError}
-              routes={directions.routes}
-              selectedRouteId={directions.selectedRouteId}
-              start={origin}
-              destination={directions.destinationPoint}
-            />
-            <RouteSummary
-              route={directionsRoute}
-              recommendedRouteId={directions.recommendedRouteId}
-              fastestRouteId={directions.fastestRouteId}
-              quieterAlternativeRouteId={directions.quieterAlternativeRouteId}
-            />
+          <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
+            <div className="flex w-full flex-col gap-5 lg:w-[540px] lg:shrink-0">
+              <p className="text-sm font-medium text-muted">ROUTE OPTIONS</p>
+              {!directionsRoute && (
+                <Banner variant="brand">Select a route below to preview it on the map.</Banner>
+              )}
+              <RouteCardList
+                routes={directions.routes}
+                recommendedRouteId={directions.recommendedRouteId}
+                fastestRouteId={directions.fastestRouteId}
+                quieterAlternativeRouteId={directions.quieterAlternativeRouteId}
+                selectedRouteId={directions.selectedRouteId}
+                onSelect={handleSelectDirectionsRoute}
+                onShowDetails={setModalRoute}
+                onGetNavigation={setNavigationRoute}
+              />
+            </div>
+
+            <div className="flex w-full flex-col gap-5">
+              <h2 className="text-xl font-semibold text-primary">Route Map</h2>
+              <MapView
+                hasMapsKey={hasMapsKey}
+                isLoaded={isLoaded}
+                loadError={loadError}
+                routes={directions.routes}
+                selectedRouteId={directions.selectedRouteId}
+                start={origin}
+                destination={directions.destinationPoint}
+              />
+              <RouteSummary
+                route={directionsRoute}
+                recommendedRouteId={directions.recommendedRouteId}
+                fastestRouteId={directions.fastestRouteId}
+                quieterAlternativeRouteId={directions.quieterAlternativeRouteId}
+              />
+            </div>
           </div>
         )}
+
+        <SensoryDetailsModal route={modalRoute} onClose={() => setModalRoute(null)} />
+        <TurnByTurnModal route={navigationRoute} onClose={() => setNavigationRoute(null)} />
       </div>
     );
   }
@@ -179,6 +212,10 @@ export default function RefugeFinderPage() {
           />
 
           {banner && <Banner variant={banner.variant}>{banner.text}</Banner>}
+
+          {!banner && !loading && hasSearched && visibleRefuges.length === 0 && (
+            <Banner variant="warning">No nearby sensory refuges found.</Banner>
+          )}
 
           {visibleRefuges.length > 0 && (
             <>
