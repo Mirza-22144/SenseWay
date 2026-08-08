@@ -98,8 +98,6 @@ Install dependencies:
 npm install
 ```
 
-Create a `.env` file from `.env.example`.
-
 Start the backend server:
 
 ```bash
