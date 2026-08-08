@@ -5,6 +5,7 @@ import RouteCardList from "../components/RouteCardList";
 import RouteSummary from "../components/RouteSummary";
 import CongestionSummary from "../components/CongestionSummary";
 import SensoryDetailsModal from "../components/SensoryDetailsModal";
+import TurnByTurnModal from "../components/TurnByTurnModal";
 import Banner from "../components/Banner";
 import { useGoogleMapsLoader } from "../hooks/useGoogleMapsLoader";
 import { fetchRoutes, ApiRequestError } from "../services/routesApi";
@@ -27,6 +28,7 @@ export default function HomePage({ onFindQuietSpace }) {
   const [loading, setLoading] = useState(false);
   const [banner, setBanner] = useState(null);
   const [modalRoute, setModalRoute] = useState(null);
+  const [navigationRoute, setNavigationRoute] = useState(null);
 
   async function handleFindRoute() {
     if (!start || !destination) return;
@@ -45,7 +47,10 @@ export default function HomePage({ onFindQuietSpace }) {
       setRecommendedRouteId(data.recommendedRouteId);
       setFastestRouteId(data.fastestRouteId || null);
       setQuieterAlternativeRouteId(data.quieterAlternativeRouteId || null);
-      setSelectedRouteId(data.recommendedRouteId || fetchedRoutes[0]?.routeId || null);
+      // Nothing is pre-selected: show every available route on the map first
+      // (Low/Moderate/High) and let the user pick one before anything is
+      // highlighted or "Get Navigation" becomes available.
+      setSelectedRouteId(null);
 
       if (fetchedRoutes.length === 0) {
         setBanner({ variant: "warning", text: "No routes available for these locations." });
@@ -108,6 +113,9 @@ export default function HomePage({ onFindQuietSpace }) {
           {routes.length > 0 && (
             <>
               <p className="text-sm font-medium text-muted">ROUTE OPTIONS</p>
+              {!selectedRoute && (
+                <Banner variant="brand">Select a route below to preview it on the map.</Banner>
+              )}
               <CongestionSummary route={selectedRoute} />
               <RouteCardList
                 routes={routes}
@@ -117,6 +125,7 @@ export default function HomePage({ onFindQuietSpace }) {
                 selectedRouteId={selectedRouteId}
                 onSelect={setSelectedRouteId}
                 onShowDetails={setModalRoute}
+                onGetNavigation={setNavigationRoute}
               />
             </>
           )}
@@ -143,6 +152,7 @@ export default function HomePage({ onFindQuietSpace }) {
       </div>
 
       <SensoryDetailsModal route={modalRoute} onClose={() => setModalRoute(null)} />
+      <TurnByTurnModal route={navigationRoute} onClose={() => setNavigationRoute(null)} />
     </div>
   );
 }

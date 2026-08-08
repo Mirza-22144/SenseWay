@@ -8,6 +8,7 @@ export default function RouteCardList({
   selectedRouteId,
   onSelect,
   onShowDetails,
+  onGetNavigation,
 }) {
   if (!routes || routes.length === 0) return null;
 
@@ -23,6 +24,7 @@ export default function RouteCardList({
           isSelected={route.routeId === selectedRouteId}
           onSelect={onSelect}
           onShowDetails={onShowDetails}
+          onGetNavigation={onGetNavigation}
         />
       ))}
     </div>

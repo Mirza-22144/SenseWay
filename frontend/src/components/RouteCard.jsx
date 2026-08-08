@@ -28,6 +28,7 @@ export default function RouteCard({
   quieterAlternativeRouteId,
   onSelect,
   onShowDetails,
+  onGetNavigation,
 }) {
   const dataUnavailable = route.dataState === "unavailable";
   const badge = statusBadge(route, { recommendedRouteId, fastestRouteId, quieterAlternativeRouteId });
@@ -55,7 +56,14 @@ export default function RouteCard({
         </button>
       ) : (
         <div>
-          <SensoryBadge rating={route.sensoryRating} showSuffix onClick={() => onShowDetails(route)} />
+          <div className="flex flex-wrap items-center gap-2">
+            <SensoryBadge rating={route.sensoryRating} showSuffix onClick={() => onShowDetails(route)} />
+            {route.highCrowdDistanceMetres > 0 && (
+              <span className="rounded-full bg-warning-subtle px-3 py-1 text-xs font-medium text-warning-ink">
+                Includes congested corridor
+              </span>
+            )}
+          </div>
           <p className="mt-2 text-xs text-secondary">{route.ratingReason}</p>
         </div>
       )}
@@ -77,11 +85,11 @@ export default function RouteCard({
 
       <button
         type="button"
-        onClick={() => onSelect(route.routeId)}
+        onClick={() => (isSelected ? onGetNavigation(route) : onSelect(route.routeId))}
         aria-pressed={isSelected}
         className="w-full cursor-pointer rounded-lg bg-brand py-3 text-sm font-semibold text-inverse hover:brightness-95"
       >
-        View Route
+        {isSelected ? "Get Navigation" : "View Route"}
       </button>
     </div>
   );

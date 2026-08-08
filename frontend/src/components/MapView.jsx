@@ -90,8 +90,12 @@ export default function MapView({ hasMapsKey, isLoaded, loadError, routes, selec
                 path={routeToPath(route)}
                 options={{
                   strokeColor: sensoryMeta(route.sensoryRating).mapColor,
-                  strokeWeight: 3,
-                  strokeOpacity: 0.5,
+                  // Nothing selected yet: show every route at an equal,
+                  // clearly visible weight so the user can browse Low/
+                  // Moderate/High before choosing. Once something IS
+                  // selected, the rest dim down to secondary lines.
+                  strokeWeight: selectedRouteId ? 3 : 4,
+                  strokeOpacity: selectedRouteId ? 0.5 : 0.85,
                   zIndex: 1,
                 }}
               />
