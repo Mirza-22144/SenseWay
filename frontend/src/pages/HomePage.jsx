@@ -14,7 +14,7 @@ import { fetchRoutes, ApiRequestError } from "../services/routesApi";
 // shading, congestion summary, quieter alternative). Layout matches the
 // Figma "Home / Sensory Route Planning" and "Congested Corridor
 // Visualisation" frames: a two-column body under a page header.
-export default function HomePage() {
+export default function HomePage({ onFindQuietSpace }) {
   const { hasMapsKey, isLoaded, loadError } = useGoogleMapsLoader();
 
   const [start, setStart] = useState(null);
@@ -76,9 +76,18 @@ export default function HomePage() {
 
   return (
     <div className="mx-auto flex max-w-[1440px] flex-col gap-8 px-16 py-8">
-      <div className="flex flex-col gap-2">
-        <h1 className="text-3xl font-semibold text-primary">Plan Your Route</h1>
-        <p className="text-base text-secondary">Find a lower-sensory route across Melbourne CBD.</p>
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-col gap-2">
+          <h1 className="text-3xl font-semibold text-primary">Plan Your Route</h1>
+          <p className="text-base text-secondary">Find a lower-sensory route across Melbourne CBD.</p>
+        </div>
+        <button
+          type="button"
+          onClick={onFindQuietSpace}
+          className="w-fit shrink-0 cursor-pointer rounded-lg border border-brand px-5 py-3 text-sm font-semibold text-brand-ink hover:bg-brand-subtle"
+        >
+          Find a Quiet Space
+        </button>
       </div>
 
       <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
