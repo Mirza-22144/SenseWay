@@ -28,9 +28,6 @@ Thumbs.db
 # Claude Code local/personal settings (machine-specific, not shared config)
 .claude/settings.local.json
 
-# MCP server config - per-developer tooling, not shared project config
-.mcp.json
-
 # Microsoft Office temporary/lock files (e.g. ~$report.docx)
 ~$*
 
