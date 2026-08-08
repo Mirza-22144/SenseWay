@@ -38,3 +38,6 @@ rad.json
 *.bclicense
 *.flf
 TestResults.xml
+
+# Microsoft Office temporary/lock files (e.g. ~$report.docx)
+~$*
