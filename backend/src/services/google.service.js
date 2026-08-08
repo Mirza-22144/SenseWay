@@ -78,9 +78,11 @@ async function callGoogleRoutes(start, destination) {
       headers: {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": env.googleMapsApiKey,
-        // Field mask keeps the response small and the bill predictable.
+        // Field mask keeps the response small and the bill predictable. Steps
+        // are the turn-by-turn instructions for the "Get Navigation" feature.
         "X-Goog-FieldMask":
-          "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.description",
+          "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.description," +
+          "routes.legs.steps.navigationInstruction,routes.legs.steps.distanceMeters,routes.legs.steps.staticDuration",
       },
       body: JSON.stringify({
         origin: { location: { latLng: latLng(start) } },
@@ -118,6 +120,8 @@ async function callGoogleRoutes(start, destination) {
         congestionPoints: [],
         bypassedAreas: [],
         averageCountPerHour: null,
+        // Turn-by-turn walking directions ("Get Navigation").
+        steps: flattenSteps(r.legs),
       };
     });
   } finally {
@@ -127,6 +131,24 @@ async function callGoogleRoutes(start, destination) {
 
 function latLng(point) {
   return { latitude: point.latitude, longitude: point.longitude };
+}
+
+// Google returns one leg for a simple origin->destination walk (no
+// waypoints), each with its own ordered steps. Flatten to a single ordered
+// list for the "Get Navigation" turn-by-turn panel.
+function flattenSteps(legs) {
+  if (!Array.isArray(legs)) return [];
+  const steps = [];
+  for (const leg of legs) {
+    for (const step of leg.steps || []) {
+      steps.push({
+        instruction: (step.navigationInstruction && step.navigationInstruction.instructions) || null,
+        distanceMetres: typeof step.distanceMeters === "number" ? step.distanceMeters : null,
+        durationMinutes: parseGoogleDuration(step.staticDuration),
+      });
+    }
+  }
+  return steps;
 }
 
 // Google durations look like "1140s".

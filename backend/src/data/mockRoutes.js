@@ -24,9 +24,6 @@
  *   - route-3 "Via Flinders Lane" is Moderate AND has one uncovered segment, so
  *     it exercises partial sensor coverage and the noData distance bucket.
  *
- * historicalPeakScore is the "usual" score at each route's busiest point, used
- * to phrase the plain-language rating reason ("higher/lower/typical than usual").
- *
  * Coordinates are realistic CBD points but approximate - illustrative mock data,
  * not surveyed geometry. All segment data is timestamped "now" by the service,
  * so in mock mode routes present as fresh live data (dataState "live"),
@@ -40,7 +37,6 @@ const mockRoutes = [
     durationMinutes: 19,
     polyline: "mock~littlecollins~b1n3",
     averageCountPerHour: 412,
-    historicalPeakScore: 40,
     sensorsUsed: [
       { sensorId: "34", name: "Flinders St-Elizabeth St (East)", distanceMetres: 45 },
       { sensorId: "22", name: "Little Collins St-Swanston St (West)", distanceMetres: 60 },
@@ -59,6 +55,13 @@ const mockRoutes = [
       { name: "Bourke Street Mall", latitude: -37.8136, longitude: 144.9648, crowdScore: 88, reason: "Pedestrian density above your threshold" },
       { name: "Flinders St Station underpass", latitude: -37.8183, longitude: 144.9671, crowdScore: 81, reason: "Pedestrian density above your threshold" },
     ],
+    steps: [
+      { instruction: "Head north on Flinders Street", distanceMetres: 360, durationMinutes: 4 },
+      { instruction: "Turn left onto Elizabeth Street", distanceMetres: 380, durationMinutes: 5 },
+      { instruction: "Turn right onto Little Collins Street", distanceMetres: 360, durationMinutes: 4 },
+      { instruction: "Turn left onto Exhibition Street", distanceMetres: 320, durationMinutes: 4 },
+      { instruction: "Arrive at your destination", distanceMetres: 0, durationMinutes: 0 },
+    ],
   },
   {
     routeId: "route-2",
@@ -66,7 +69,6 @@ const mockRoutes = [
     durationMinutes: 15,
     polyline: "mock~bourkemall~f4st",
     averageCountPerHour: 1750,
-    historicalPeakScore: 70,
     sensorsUsed: [
       { sensorId: "2", name: "Bourke Street Mall (North)", distanceMetres: 25 },
       { sensorId: "3", name: "Bourke Street Mall (South)", distanceMetres: 30 },
@@ -83,6 +85,13 @@ const mockRoutes = [
       { name: "Bourke St / Swanston St", latitude: -37.8152, longitude: 144.9659, crowdScore: 90 },
     ],
     bypassedAreas: [],
+    steps: [
+      { instruction: "Head east on Swanston Street", distanceMetres: 300, durationMinutes: 3 },
+      { instruction: "Continue onto Bourke Street", distanceMetres: 280, durationMinutes: 3 },
+      { instruction: "Continue onto Bourke Street Mall", distanceMetres: 320, durationMinutes: 4 },
+      { instruction: "Turn right onto Lonsdale Street", distanceMetres: 280, durationMinutes: 3 },
+      { instruction: "Arrive at your destination", distanceMetres: 0, durationMinutes: 0 },
+    ],
   },
   {
     routeId: "route-3",
@@ -90,7 +99,6 @@ const mockRoutes = [
     durationMinutes: 17,
     polyline: "mock~flinderslane~c2wd",
     averageCountPerHour: 980,
-    historicalPeakScore: 55,
     sensorsUsed: [
       { sensorId: "9", name: "Flinders Lane-Degraves St", distanceMetres: 40 },
       { sensorId: "12", name: "Flinders La-Elizabeth St", distanceMetres: 65 },
@@ -108,6 +116,13 @@ const mockRoutes = [
     ],
     bypassedAreas: [
       { name: "Bourke Street Mall", latitude: -37.8144, longitude: 144.9648, crowdScore: 88, reason: "Pedestrian density above your threshold" },
+    ],
+    steps: [
+      { instruction: "Head east on Flinders Street", distanceMetres: 340, durationMinutes: 4 },
+      { instruction: "Turn left onto Degraves Street", distanceMetres: 320, durationMinutes: 4 },
+      { instruction: "Turn right onto Flinders Lane", distanceMetres: 340, durationMinutes: 4 },
+      { instruction: "Continue to your destination", distanceMetres: 300, durationMinutes: 4 },
+      { instruction: "Arrive at your destination", distanceMetres: 0, durationMinutes: 0 },
     ],
   },
 ];

@@ -74,24 +74,19 @@ test("dataState is unavailable / stale / live in the right conditions", () => {
   assert.equal(metrics.dataStateFor([seg("Low", 1)], fresh, now), "live");
 });
 
-test("ratingReason names the busiest street with live data, and none without", () => {
-  const withData = metrics.buildRatingReason({
-    hasLiveData: true,
-    peakSegment: { crowdScore: 90, street: "Bourke Street Mall" },
-    historicalPeakScore: 70,
-  });
-  assert.ok(withData.length > 0);
-  assert.match(withData, /Bourke Street Mall/);
-  assert.match(withData, /Higher than usual/);
+test("ratingReason gives a band-specific sentence with live data, and none without", () => {
+  const low = metrics.buildRatingReason({ hasLiveData: true, sensoryRating: "Low" });
+  assert.match(low, /Low sensory rating because it avoids the busiest pedestrian areas/);
 
-  const noData = metrics.buildRatingReason({
-    hasLiveData: false,
-    peakSegment: null,
-    historicalPeakScore: null,
-  });
+  const moderate = metrics.buildRatingReason({ hasLiveData: true, sensoryRating: "Moderate" });
+  assert.match(moderate, /Moderate sensory rating/);
+
+  const high = metrics.buildRatingReason({ hasLiveData: true, sensoryRating: "High" });
+  assert.match(high, /High sensory rating/);
+
+  const noData = metrics.buildRatingReason({ hasLiveData: false, sensoryRating: null });
   assert.ok(noData.length > 0);
-  // Must NOT name any street when there is no live data.
-  assert.doesNotMatch(noData, /Street|Road|Lane|Avenue/);
+  assert.doesNotMatch(noData, /Low sensory rating|Moderate sensory rating|High sensory rating/);
 });
 
 test("quieterAlternative is null when the alternative exceeds the extra-minute cap", () => {
@@ -129,7 +124,7 @@ test("quieterAlternative is null when the recommended route has no live data", (
   );
 });
 
-test("routes never exceed three, keeping the calmest (MAX_ROUTES)", () => {
+test("routes are capped per sensory band (Low/Moderate/High), not just the overall calmest three", () => {
   const now = new Date();
   const mk = (id, score, dur) =>
     routeService.assembleBase(
@@ -145,13 +140,33 @@ test("routes never exceed three, keeping the calmest (MAX_ROUTES)", () => {
       { threshold: 70, now }
     );
 
-  const four = [mk("a", 90, 15), mk("b", 20, 19), mk("c", 50, 17), mk("d", 35, 18)];
-  const finalized = routeService.finalizeRoutes(four, {
-    maxRoutes: metrics.MAX_ROUTES,
+  // Four Low, two Moderate, one High - more than fits within the per-band
+  // quotas (3/1/1), so some within each band must be dropped, but the High
+  // route (previously silently excluded by a flat "top 3 calmest" cap) must
+  // now survive - a user should always be able to compare a fast-but-crowded
+  // option against the calmer ones.
+  const candidates = [
+    mk("low1", 10, 15),
+    mk("low2", 20, 16),
+    mk("low3", 25, 17),
+    mk("low4", 28, 18),
+    mk("mod1", 35, 19),
+    mk("mod2", 50, 20),
+    mk("high1", 90, 12),
+  ];
+  const finalized = routeService.finalizeRoutes(candidates, {
+    maxLowRoutes: metrics.MAX_LOW_ROUTES,
+    maxModerateRoutes: metrics.MAX_MODERATE_ROUTES,
+    maxHighRoutes: metrics.MAX_HIGH_ROUTES,
     maxExtraMinutes: metrics.ALTERNATIVE_MAX_EXTRA_MINUTES,
   });
-  assert.equal(finalized.routes.length, 3);
-  // Calmest kept and recommended; busiest (score 90) dropped.
-  assert.equal(finalized.recommendedRouteId, "b");
-  assert.ok(!finalized.routes.some((r) => r.routeId === "a"));
+
+  assert.equal(finalized.routes.length, 5); // 3 Low + 1 Moderate + 1 High
+  const ids = finalized.routes.map((r) => r.routeId);
+  assert.ok(ids.includes("low1") && ids.includes("low2") && ids.includes("low3"));
+  assert.ok(!ids.includes("low4"), "4th Low route should be dropped (quota is 3)");
+  assert.ok(ids.includes("mod1"), "calmest Moderate should be kept");
+  assert.ok(!ids.includes("mod2"), "2nd Moderate should be dropped (quota is 1)");
+  assert.ok(ids.includes("high1"), "High route must now be visible, not silently dropped");
+  assert.equal(finalized.recommendedRouteId, "low1"); // calmest overall
 });

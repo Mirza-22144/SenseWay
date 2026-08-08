@@ -7,7 +7,6 @@ const scoring = require("./scoring.service");
 const metrics = require("./routeMetrics");
 const { countToCrowdScore } = require("../utils/crowd");
 const { haversineMetres } = require("../utils/geo");
-const { melbourneParts } = require("../utils/time");
 
 /**
  * Orchestrates one route recommendation (US1.1 / US1.2).
@@ -31,7 +30,7 @@ const REFUGE_LOOKUP_MINUTES = 5;
 const CONGESTION_POINT_SCORE = 71;
 
 async function recommend(request) {
-  const { start, destination, departureTime, preferences } = request;
+  const { start, destination, preferences } = request;
   const threshold = preferences.crowdThreshold;
   const now = new Date();
 
@@ -49,7 +48,7 @@ async function recommend(request) {
     if (c.segments && c.segments.length && c.segments[0].lengthMetres != null) {
       continue; // mock candidate: fully formed
     }
-    const enriched = await scoreLiveCandidate(c, departureTime, now);
+    const enriched = await scoreLiveCandidate(c, now);
     pedestrianSource = mergeSource(pedestrianSource, enriched.pedestrianSource);
     Object.assign(c, enriched.candidateFields);
   }
@@ -57,9 +56,12 @@ async function recommend(request) {
   // 3. Assemble full route objects (no cross-route fields yet).
   const assembled = candidates.map((c) => assembleBase(c, { threshold, now }));
 
-  // 4. Rank calmest-first, cap to three, and compute cross-route fields.
+  // 4. Rank calmest-first, pick a spread across Low/Moderate/High, and
+  //    compute cross-route fields.
   const finalized = finalizeRoutes(assembled, {
-    maxRoutes: metrics.MAX_ROUTES,
+    maxLowRoutes: metrics.MAX_LOW_ROUTES,
+    maxModerateRoutes: metrics.MAX_MODERATE_ROUTES,
+    maxHighRoutes: metrics.MAX_HIGH_ROUTES,
     maxExtraMinutes: metrics.ALTERNATIVE_MAX_EXTRA_MINUTES,
   });
   const routes = finalized.routes;
@@ -150,11 +152,7 @@ function assembleBase(candidate, { threshold, now }) {
 
   const ratingReason = metrics.buildRatingReason({
     hasLiveData: dataState !== "unavailable",
-    peakSegment,
-    historicalPeakScore:
-      candidate.historicalPeakScore != null
-        ? candidate.historicalPeakScore
-        : null,
+    sensoryRating,
   });
 
   // "high" only when we have a fresh, known rating; "low" otherwise. dataState
@@ -203,25 +201,52 @@ function assembleBase(candidate, { threshold, now }) {
     },
     segments,
     bypassedAreas,
+    // Turn-by-turn walking directions ("Get Navigation"), from the Google
+    // Routes API in live mode or mock fixtures otherwise.
+    steps: candidate.steps || [],
     alerts: [],
   };
 }
 
 /**
- * Rank calmest-first, cap to maxRoutes, then compute the cross-route trade-off
- * fields and the quieter alternative. Shared by recommend() and reroute.
+ * Rank calmest-first, then pick a genuine spread across risk bands (up to
+ * maxLowRoutes calmest Low routes, plus the calmest available Moderate route,
+ * plus the calmest available High route) rather than just the overall
+ * calmest handful - so a user can always compare "safe" against "fast but
+ * crowded" instead of seeing three near-identical calm options. Falls back to
+ * a plain calmest-first cap when no candidate has a scored band at all (e.g.
+ * live data unavailable for everything). Then computes the cross-route
+ * trade-off fields and the quieter alternative. Shared by recommend() and
+ * reroute.
  */
-function finalizeRoutes(routeObjs, { maxRoutes, maxExtraMinutes }) {
+function finalizeRoutes(routeObjs, { maxLowRoutes, maxModerateRoutes, maxHighRoutes, maxExtraMinutes }) {
   const sorted = routeObjs.slice().sort(byCalmestThenFastest);
-  const routes = sorted.slice(0, maxRoutes);
 
-  if (routes.length === 0) {
+  if (sorted.length === 0) {
     return {
-      routes,
+      routes: [],
       recommendedRouteId: null,
       fastestRouteId: null,
       quieterAlternativeRouteId: null,
     };
+  }
+
+  const byBand = { Low: [], Moderate: [], High: [] };
+  for (const r of sorted) {
+    if (byBand[r.sensoryRating]) byBand[r.sensoryRating].push(r);
+  }
+
+  let routes = [
+    ...byBand.Low.slice(0, maxLowRoutes),
+    ...byBand.Moderate.slice(0, maxModerateRoutes),
+    ...byBand.High.slice(0, maxHighRoutes),
+  ].sort(byCalmestThenFastest);
+
+  // Nothing had a scored band (e.g. every candidate is Unknown because live
+  // data is unavailable) - fall back to the plain calmest-first cap so we
+  // still show routes rather than an empty list.
+  if (routes.length === 0) {
+    routes = sorted.slice(0, maxLowRoutes + maxModerateRoutes + maxHighRoutes);
   }
 
   const recommended = routes[0]; // calmest
@@ -269,10 +294,9 @@ function byCalmestThenFastest(a, b) {
  * COVERAGE_RADIUS_METRES is left UNSCORED (hasLiveData false), never guessed.
  * Only runs on the live path; not covered by the mock test suite (see README).
  */
-async function scoreLiveCandidate(candidate, departureTime, now) {
+async function scoreLiveCandidate(candidate, now) {
   const points = Array.isArray(candidate.points) ? candidate.points : [];
   const sampled = samplepoints(points, 6);
-  const { dayOfWeek, hour } = melbourneParts(departureTime || now);
 
   const segments = [];
   const sensorsUsed = [];
@@ -281,7 +305,6 @@ async function scoreLiveCandidate(candidate, departureTime, now) {
   const counts = [];
   let oldestObservedAt = null;
   let pedestrianSource = null;
-  let peakCovered = null;
 
   for (let i = 0; i < sampled.length - 1; i += 1) {
     const from = sampled[i];
@@ -301,7 +324,6 @@ async function scoreLiveCandidate(candidate, departureTime, now) {
     const covered = sensor.distanceMetres <= metrics.COVERAGE_RADIUS_METRES;
 
     let crowdScore = null;
-    let street = null;
     let hasLiveData = false;
 
     if (covered) {
@@ -313,7 +335,6 @@ async function scoreLiveCandidate(candidate, departureTime, now) {
       crowdScore = countToCrowdScore(latest.count);
       hasLiveData = typeof crowdScore === "number";
       if (hasLiveData) {
-        street = sensorStreet(sensor.name);
         counts.push(latest.count);
         if (latest.observedAt) {
           if (!oldestObservedAt || latest.observedAt < oldestObservedAt) {
@@ -339,36 +360,15 @@ async function scoreLiveCandidate(candidate, departureTime, now) {
       }
     }
 
-    const seg = {
+    segments.push({
       fromLatitude: from.latitude,
       fromLongitude: from.longitude,
       toLatitude: to.latitude,
       toLongitude: to.longitude,
       lengthMetres,
-      street,
       hasLiveData,
       crowdScore,
-    };
-    if (hasLiveData && (!peakCovered || crowdScore > peakCovered.crowdScore)) {
-      peakCovered = seg;
-    }
-    segments.push(seg);
-  }
-
-  // Historical peak score for the rating reason: the mean for the peak segment's
-  // sensor, at the departure hour and day-of-week (US1.1.2's developer step).
-  let historicalPeakScore = null;
-  if (peakCovered && sensorsUsed.length) {
-    const peakSensor =
-      sensorsUsed.find((s) => sensorStreet(s.name) === peakCovered.street) ||
-      sensorsUsed[0];
-    const { mean } = await pedestrian.hourlyMean(
-      peakSensor.sensorId,
-      dayOfWeek,
-      hour,
-      "live"
-    );
-    historicalPeakScore = countToCrowdScore(mean);
+    });
   }
 
   return {
@@ -381,17 +381,9 @@ async function scoreLiveCandidate(candidate, departureTime, now) {
       averageCountPerHour: counts.length
         ? Math.round(counts.reduce((a, b) => a + b, 0) / counts.length)
         : null,
-      historicalPeakScore,
       dataUpdatedAt: oldestObservedAt || now.toISOString(),
     },
   };
-}
-
-// Sensor names look like "Bourke Street Mall (North)"; strip the trailing
-// direction qualifier to get a street-ish label for the rating reason.
-function sensorStreet(name) {
-  if (!name) return null;
-  return name.replace(/\s*\(.*\)\s*$/, "").trim() || null;
 }
 
 // Pick up to `max` points roughly evenly along the polyline.

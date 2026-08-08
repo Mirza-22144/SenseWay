@@ -122,7 +122,7 @@ illustrate the uncovered/grey state — all real output):
             "polyline": "mock~littlecollins~b1n3",
             "crowdScore": 24,
             "sensoryRating": "Low",
-            "ratingReason": "Typical pedestrian activity on Little Collins Street.",
+            "ratingReason": "This route has a Low sensory rating because it avoids the busiest pedestrian areas and primarily passes through low-density streets.",
             "dataState": "live",
             "sensorCoverage": "full",
             "confidence": "high",
@@ -141,6 +141,11 @@ illustrate the uncovered/grey state — all real output):
             ],
             "bypassedAreas": [
                 { "name": "Bourke Street Mall", "latitude": -37.8136, "longitude": 144.9648, "crowdScore": 88, "reason": "Pedestrian density above your threshold" }
+            ],
+            "steps": [
+                { "instruction": "Head north on Flinders Street", "distanceMetres": 360, "durationMinutes": 4 },
+                { "instruction": "Turn left onto Elizabeth Street", "distanceMetres": 380, "durationMinutes": 5 },
+                "..."
             ],
             "alerts": []
         }
@@ -171,6 +176,7 @@ Field notes:
 - The four distance buckets **sum to `distanceMetres`** for every route.
 - `minutesSlowerThanRecommended` is relative to the recommended (calmest) route and **can be negative** (a route that is faster than the recommended one).
 - `segments[].exceedsThreshold` is per-segment vs `crowdThreshold`; uncovered segments are always `false` (no score to compare).
+- `steps[]` is ordered turn-by-turn walking directions ("Get Navigation"). Each entry is `{ instruction, distanceMetres, durationMinutes }`. Live mode pulls this from Google's Routes API (`routes.legs.steps`); mock mode uses fixed fixture steps. `instruction` can be `null` if Google didn't provide text for a given step — never fabricated.
 
 **No-routes** (start == destination) — `200`, not an error:
 ```json

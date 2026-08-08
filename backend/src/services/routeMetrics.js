@@ -12,8 +12,14 @@ const scoring = require("./scoring.service");
  * the backend tells it which state applies. These helpers compute those states.
  */
 
-// AC 1.1.1: "up to three route options". Applied AFTER calmest-first ranking.
-const MAX_ROUTES = 3;
+// AC 1.1.1: show a genuine spread of risk levels, not just the calmest
+// handful, so a user can compare "safe" against "fast but crowded" - up to
+// this many of the calmest Low routes, plus the calmest available Moderate
+// route, plus the calmest available High route. Applied AFTER calmest-first
+// ranking, per band.
+const MAX_LOW_ROUTES = 3;
+const MAX_MODERATE_ROUTES = 1;
+const MAX_HIGH_ROUTES = 1;
 
 // AC 1.2.3: "within a reasonable extra walking time". Named and configurable so
 // the team can tune "reasonable" in one place; surfaced in the response as
@@ -105,38 +111,35 @@ function dataStateFor(segments, dataUpdatedAt, now = new Date()) {
   return "live";
 }
 
+// AC 1.1.2's plain-language reason, one fixed sentence per sensory band. We
+// deliberately do NOT name a specific street: the real sensor dataset
+// (SENSOR_LOCATION) only has internal site codes, never human-readable
+// names (see route.service.js's sensorStreet), so a per-street sentence
+// would either be empty or leak a code like "Lat224_T" to the user. A
+// band-level explanation is honest for every route without depending on
+// data we don't have.
+const REASON_BY_RATING = {
+  Low: "This route has a Low sensory rating because it avoids the busiest pedestrian areas and primarily passes through low-density streets.",
+  Moderate:
+    "This route has a Moderate sensory rating because it passes through a mix of quieter streets and some moderately busy pedestrian areas.",
+  High: "This route has a High sensory rating because it passes through some of the busiest, most crowded pedestrian areas on this route.",
+};
+
 /**
  * A complete plain-language sentence the frontend renders verbatim (AC 1.1.2).
- * Derived from the highest-scoring covered segment's street compared with its
- * historical mean for that sensor/hour/day-of-week.
  *
- * When there is no live data, the sentence says so and MUST NOT name a street
- * (we have nothing to point at).
+ * When there is no live data, the sentence says so rather than claiming a
+ * band we can't actually support with data.
  *
  * @param {object} p
  * @param {boolean} p.hasLiveData
- * @param {object|null} p.peakSegment  the highest-scoring covered segment
- * @param {number|null} p.historicalPeakScore  usual score at that spot
+ * @param {"Low"|"Moderate"|"High"|"Unknown"|null} p.sensoryRating
  */
-function buildRatingReason({ hasLiveData, peakSegment, historicalPeakScore }) {
-  if (!hasLiveData || !peakSegment || peakSegment.crowdScore == null) {
+function buildRatingReason({ hasLiveData, sensoryRating }) {
+  if (!hasLiveData || !REASON_BY_RATING[sensoryRating]) {
     return "Live sensory data is unavailable for this route, so this rating is based on limited information.";
   }
-
-  const street = peakSegment.street;
-  if (!street) {
-    // Covered but we don't know the street name - stay honest, don't invent one.
-    return "Pedestrian activity data is available for this route, but the busiest street could not be named.";
-  }
-
-  const delta =
-    typeof historicalPeakScore === "number"
-      ? peakSegment.crowdScore - historicalPeakScore
-      : 0;
-
-  if (delta >= 15) return `Higher than usual pedestrian activity on ${street}.`;
-  if (delta <= -15) return `Lower than usual pedestrian activity on ${street}.`;
-  return `Typical pedestrian activity on ${street}.`;
+  return REASON_BY_RATING[sensoryRating];
 }
 
 /**
@@ -189,7 +192,9 @@ function pickQuieterAlternative(routes, { fastest, recommended, maxExtraMinutes 
 }
 
 module.exports = {
-  MAX_ROUTES,
+  MAX_LOW_ROUTES,
+  MAX_MODERATE_ROUTES,
+  MAX_HIGH_ROUTES,
   ALTERNATIVE_MAX_EXTRA_MINUTES,
   COVERAGE_RADIUS_METRES,
   distanceBuckets,

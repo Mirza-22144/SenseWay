@@ -183,11 +183,12 @@ test("each route carries dataState and sensorCoverage (AC 1.1.2 / 1.2.1)", async
   }
 });
 
-test("ratingReason is a non-empty sentence and names the busy street when live (AC 1.1.2)", async () => {
+test("ratingReason is a non-empty, band-specific sentence when live (AC 1.1.2)", async () => {
   const body = await (await postRoutes(validBody)).json();
   const busy = body.routes.find((r) => r.routeId === "route-2");
+  assert.equal(busy.sensoryRating, "High");
   assert.ok(typeof busy.ratingReason === "string" && busy.ratingReason.length > 0);
-  assert.match(busy.ratingReason, /Bourke Street Mall/);
+  assert.match(busy.ratingReason, /High sensory rating/);
 });
 
 test("an uncovered segment is Unknown, hasLiveData false, and carries no score (AC 1.2.1)", async () => {
