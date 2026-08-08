@@ -1,16 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { MELBOURNE_BOUNDS, isWithinMelbourne } from "../constants/melbourne";
-import { MELBOURNE_PLACES } from "../data/mockPlaces";
 
 const FIELD_CLASS = "h-[50px] w-full rounded-lg border border-line bg-base px-4 py-3 text-sm text-primary";
 
-// A location field. Renders Google's PlaceAutocompleteElement (the "Places
+// A location field, backed by Google's PlaceAutocompleteElement (the "Places
 // API (New)" web component — the legacy <Autocomplete> widget needs the old
-// Places API, which this project's key deliberately does not allow) once a
-// Maps API key is configured; otherwise falls back to a picker over
-// well-known CBD landmarks so the flow works with zero setup. Shared by
-// SearchBar (Story 1.1) and RefugeSearchBar (Story 2.1).
-export default function LocationField({ id, labelText, value, onChange, hasMapsKey, isLoaded }) {
+// Places API, which this project's key deliberately does not allow). Shared
+// by SearchBar (Story 1.1) and RefugeSearchBar (Story 2.1). Requires
+// VITE_GOOGLE_MAPS_API_KEY to be set — see frontend/.env.example.
+export default function LocationField({ id, labelText, onChange, hasMapsKey, isLoaded }) {
   const containerRef = useRef(null);
   const [error, setError] = useState(null);
 
@@ -57,14 +55,15 @@ export default function LocationField({ id, labelText, value, onChange, hasMapsK
     };
   }, [hasMapsKey, isLoaded, id, onChange]);
 
-  if (hasMapsKey && isLoaded) {
+  if (!hasMapsKey) {
     return (
       <div className="flex flex-col gap-2">
         <label htmlFor={id} className="text-sm font-medium text-primary">
           {labelText}
         </label>
-        <div ref={containerRef} />
-        {error && <p className="text-xs text-danger-ink">{error}</p>}
+        <div className={`${FIELD_CLASS} flex items-center text-muted`}>
+          Set VITE_GOOGLE_MAPS_API_KEY in frontend/.env to search
+        </div>
       </div>
     );
   }
@@ -74,27 +73,12 @@ export default function LocationField({ id, labelText, value, onChange, hasMapsK
       <label htmlFor={id} className="text-sm font-medium text-primary">
         {labelText}
       </label>
-      <select
-        id={id}
-        value={value?.label || ""}
-        onChange={(event) => {
-          const place = MELBOURNE_PLACES.find((p) => p.name === event.target.value);
-          onChange(
-            place ? { label: place.name, latitude: place.latitude, longitude: place.longitude } : null
-          );
-        }}
-        className={FIELD_CLASS}
-      >
-        <option value="">Select a location…</option>
-        {value && !MELBOURNE_PLACES.some((p) => p.name === value.label) && (
-          <option value={value.label}>{value.label}</option>
-        )}
-        {MELBOURNE_PLACES.map((place) => (
-          <option key={place.name} value={place.name}>
-            {place.name}
-          </option>
-        ))}
-      </select>
+      {isLoaded ? (
+        <div ref={containerRef} />
+      ) : (
+        <div className={`${FIELD_CLASS} flex items-center text-muted`}>Loading…</div>
+      )}
+      {error && <p className="text-xs text-danger-ink">{error}</p>}
     </div>
   );
 }
