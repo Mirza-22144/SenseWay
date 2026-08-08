@@ -1,15 +1,13 @@
 import { useEffect } from "react";
 import { formatDistance, formatDuration } from "../utils/format";
-import { refugeIcon, refugeTypeLabel, refugeHoursText } from "../utils/refuge";
+import { refugeIcon, refugeTypeLabel } from "../utils/refuge";
 
 // AC 2.1.2: refuge details panel. AC 2.1.3's "Get Directions" is triggered
 // from here. `attributes` is [] whenever the backend can't justify a tag from
 // the Landmarks data (see refuge.service.js deriveAttributes) — per the AC's
 // own exception, we omit the facilities section entirely rather than show it
-// empty. Get Directions is never disabled: the AC's "disable when the refuge
-// is closed" rule needs real opening-hours data to evaluate, and
-// openingHoursToday is always null today (no hours exist in the dataset) —
-// this reads the real field once it's populated instead of guessing.
+// empty. Opening hours are not shown (no source data — see backend/README.md).
+// Get Directions is never disabled as a result.
 export default function RefugeDetailsModal({ refuge, onClose, onGetDirections }) {
   useEffect(() => {
     if (!refuge) return undefined;
@@ -47,7 +45,6 @@ export default function RefugeDetailsModal({ refuge, onClose, onGetDirections })
           <span className="rounded-full bg-brand-subtle px-2.5 py-1 text-xs font-medium text-brand-ink">
             {refugeTypeLabel(refuge)}
           </span>
-          <p className="text-sm text-secondary">{refugeHoursText(refuge)}</p>
         </div>
 
         <div className="flex gap-6">

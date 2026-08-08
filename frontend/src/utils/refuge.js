@@ -21,10 +21,3 @@ export function refugeIcon(refuge) {
 export function refugeTypeLabel(refuge) {
   return refuge.refugeType || "Public space";
 }
-
-// AC 2.1.2: "Open now" / "Closes at X" text. openingHoursToday is always null
-// today (the Landmarks dataset has no hours), so this always falls through to
-// the AC's own exception copy — but reads the real field once it's populated.
-export function refugeHoursText(refuge) {
-  return refuge.openingHoursToday || "Opening hours not available.";
-}
