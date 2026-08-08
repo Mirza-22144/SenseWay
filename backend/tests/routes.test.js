@@ -131,15 +131,20 @@ test("latitude 999 returns 400", async () => {
   assert.equal(body.error.code, "INVALID_REQUEST");
 });
 
-test("coordinates in London return 400 (outside greater Melbourne)", async () => {
+test("out-of-Melbourne coordinate returns a distinguishable 400 (AC 1.1.1)", async () => {
   const res = await postRoutes({
     ...validBody,
-    start: { latitude: 51.5074, longitude: -0.1278 },
+    start: { latitude: 51.5074, longitude: -0.1278 }, // London
   });
   assert.equal(res.status, 400);
   const body = await res.json();
   assert.equal(body.error.code, "INVALID_REQUEST");
-  assert.ok(body.error.details.some((d) => /Melbourne/i.test(d)));
+  // Distinguishable from other validation failures: carries the exact AC wording
+  // the frontend shows ("Please enter a valid Melbourne CBD location").
+  assert.ok(
+    body.error.details.some((d) => /valid Melbourne CBD location/i.test(d)),
+    "out-of-area detail is distinguishable"
+  );
 });
 
 test("malformed JSON returns 400 MALFORMED_JSON", async () => {
@@ -158,4 +163,95 @@ test("POST with no body returns 400, not a crash", async () => {
   assert.equal(res.status, 400);
   const body = await res.json();
   assert.equal(body.error.code, "INVALID_REQUEST");
+});
+
+// --- Acceptance-criteria fields (US1.1 / US1.2) -----------------------------
+
+test("each route carries dataState and sensorCoverage (AC 1.1.2 / 1.2.1)", async () => {
+  const body = await (await postRoutes(validBody)).json();
+  const byId = Object.fromEntries(body.routes.map((r) => [r.routeId, r]));
+
+  // Mock data is fresh and (mostly) covered -> live.
+  assert.equal(byId["route-1"].dataState, "live");
+  assert.equal(byId["route-1"].sensorCoverage, "full");
+  // route-3 has one uncovered segment -> partial coverage.
+  assert.equal(byId["route-3"].sensorCoverage, "partial");
+
+  for (const r of body.routes) {
+    assert.ok(["live", "stale", "unavailable"].includes(r.dataState));
+    assert.ok(["full", "partial", "none"].includes(r.sensorCoverage));
+  }
+});
+
+test("ratingReason is a non-empty sentence and names the busy street when live (AC 1.1.2)", async () => {
+  const body = await (await postRoutes(validBody)).json();
+  const busy = body.routes.find((r) => r.routeId === "route-2");
+  assert.ok(typeof busy.ratingReason === "string" && busy.ratingReason.length > 0);
+  assert.match(busy.ratingReason, /Bourke Street Mall/);
+});
+
+test("an uncovered segment is Unknown, hasLiveData false, and carries no score (AC 1.2.1)", async () => {
+  const body = await (await postRoutes(validBody)).json();
+  const route3 = body.routes.find((r) => r.routeId === "route-3");
+  const uncovered = route3.segments.filter((s) => s.hasLiveData === false);
+  assert.ok(uncovered.length >= 1, "route-3 has an uncovered segment");
+  for (const s of uncovered) {
+    assert.equal(s.sensoryRating, "Unknown");
+    assert.equal(s.crowdScore, null);
+  }
+});
+
+test("the four distance buckets sum to the route total (AC 1.2.2)", async () => {
+  const body = await (await postRoutes(validBody)).json();
+  for (const r of body.routes) {
+    const sum =
+      r.highCrowdDistanceMetres +
+      r.moderateCrowdDistanceMetres +
+      r.lowCrowdDistanceMetres +
+      r.noDataDistanceMetres;
+    assert.equal(sum, r.distanceMetres, `${r.routeId} buckets sum to total`);
+  }
+});
+
+test("highCrowdDistanceMetres counts only High segments and is 0 when there are none (AC 1.2.2)", async () => {
+  const body = await (await postRoutes(validBody)).json();
+  const calm = body.routes.find((r) => r.routeId === "route-1"); // all Low/Moderate
+  const busy = body.routes.find((r) => r.routeId === "route-2"); // has High segments
+  assert.equal(calm.highCrowdDistanceMetres, 0);
+  assert.ok(busy.highCrowdDistanceMetres > 0);
+  // Cross-check: the High bucket equals the summed length of High segments.
+  const highLen = busy.segments
+    .filter((s) => s.sensoryRating === "High")
+    .reduce((a, s) => a + s.lengthMetres, 0);
+  assert.equal(busy.highCrowdDistanceMetres, highLen);
+});
+
+test("response exposes the quieter alternative and its budget (AC 1.2.3)", async () => {
+  const body = await (await postRoutes(validBody)).json();
+  assert.equal(body.alternativeMaxExtraMinutes, 10);
+  // The calmest route qualifies as the quieter alternative to the fast route.
+  assert.equal(body.quieterAlternativeRouteId, "route-1");
+  const alt = body.routes.find((r) => r.routeId === body.quieterAlternativeRouteId);
+  assert.ok(alt.highCrowdDistanceSavedMetres > 0, "alt avoids some high-crowd distance");
+  assert.ok(typeof alt.minutesSlowerThanRecommended === "number");
+});
+
+test("routes never exceed three (AC 1.1.1)", async () => {
+  const body = await (await postRoutes(validBody)).json();
+  assert.ok(body.routes.length <= 3);
+});
+
+test("no routes available is 200 with an explicit flag, not a 500 (AC 1.1.1 / 2.1.3)", async () => {
+  // Start == destination: there is no route to walk.
+  const res = await postRoutes({
+    ...validBody,
+    start: { latitude: -37.8136, longitude: 144.9631 },
+    destination: { latitude: -37.8136, longitude: 144.9631 },
+  });
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.noRoutesAvailable, true);
+  assert.deepEqual(body.routes, []);
+  assert.equal(body.recommendedRouteId, null);
+  assert.equal(body.quieterAlternativeRouteId, null);
 });

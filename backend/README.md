@@ -76,13 +76,52 @@ Full request/response examples (copied from the real running server) are in
 [`API-CONTRACT.md`](./API-CONTRACT.md). Ready-to-run requests are in
 [`requests.http`](./requests.http).
 
-| Method & path | Purpose | User story |
-|---------------|---------|-----------|
-| `GET /api/health` | liveness; never touches DB/Google/pipeline | — |
-| `POST /api/routes` | calmest-first candidate routes with the fastest identified and factors explained | US1.1 / US1.2 |
-| `POST /api/routes/reroute` | warn about a congestion point ahead and offer a calmer route | US1.3 |
-| `GET /api/refuges/nearby` | quiet spaces within a walking-time radius | US2.1 |
-| `GET /api/forecast` | predicted crowd level in 15-minute intervals | US2.2 |
+| Method & path | Purpose | User story | In current scope? |
+|---------------|---------|-----------|-------------------|
+| `GET /api/health` | liveness; never touches DB/Google/pipeline | — | yes |
+| `POST /api/routes` | calmest-first routes (≤3) with the fastest + quieter alternative, per-route data states and the four-state segment breakdown | US1.1 / US1.2 | yes |
+| `GET /api/refuges/nearby` | quiet spaces within a walking-time radius | US2.1 | yes |
+| `POST /api/routes/reroute` | warn about a congestion point ahead and offer a calmer route | US1.3 | **no — see below** |
+| `GET /api/forecast` | predicted crowd level in 15-minute intervals | US2.2 | **no — see below** |
+
+> **Scope note.** The signed-off *User stories & acceptance criteria* document
+> contains only **US1.1, US1.2 and US2.1**. `POST /api/routes/reroute` (US1.3)
+> and `GET /api/forecast` (US2.2) were built ahead of the current iteration.
+> They are kept and working, but are **outside the current acceptance-criteria
+> scope pending team confirmation** — do not treat them as signed-off.
+
+### Route response: the states the frontend keys off
+
+Every AC exception is a UI message, and the response carries exactly the field
+the frontend needs to choose it (full table in `API-CONTRACT.md`). The three
+axes:
+
+- **`dataState`** (per route): `"live"` | `"stale"` | `"unavailable"`.
+  - `live` — fresh live data.
+  - `stale` — data older than **30 minutes** → AC 1.1.2 "Sensory data may be
+    outdated" (the rating is still shown; staleness no longer blanks it).
+  - `unavailable` — no segment has live data → "Live sensory data unavailable" /
+    "Detailed sensory data unavailable for this route".
+- **`sensorCoverage`** (per route): `"full"` | `"partial"` | `"none"`.
+  - `none` → AC 1.2.1 "Our sensor network does not cover this route."
+- **`segments[].sensoryRating`** has **four** states for the AC 1.2.1 legend:
+  `Low` (green) / `Moderate` (amber) / `High` (red) / **`Unknown` (neutral
+  grey)**. An uncovered segment has `hasLiveData: false` and **no crowd score**
+  (`crowdScore: null`) — we never score a segment with no sensor coverage.
+
+`dataState`/`dataSource` are different axes: in mock mode the fixtures present as
+fresh (`dataState:"live"`) so the frontend can build the happy path, while
+`dataSource` stays `"mock"`.
+
+### The quieter alternative (AC 1.2.3)
+
+`quieterAlternativeRouteId` names the calmest route that is within
+**`alternativeMaxExtraMinutes`** (default **10**, exposed in the response) of the
+fastest route and reduces high-crowd walking distance. It is `null` — the
+frontend's cue for "No suitable quieter alternative available" — when nothing
+qualifies or when the recommended route's `dataState` is `"unavailable"`.
+Per route: `minutesSlowerThanRecommended` (can be negative) and
+`highCrowdDistanceSavedMetres`.
 
 ### Error format
 
@@ -129,10 +168,12 @@ backend/
     controllers/                  # request in, response out; no business logic
     services/
       scoring.service.js          # PURE crowd-score -> Low/Moderate/High/Unknown
+      routeMetrics.js             # PURE per-route AC helpers (buckets, dataState,
+                                  #   sensorCoverage, ratingReason, quieter alt)
       route.service.js            # calmest-first orchestration
-      reroute.service.js
+      reroute.service.js          # (US1.3 - outside current AC scope)
       refuge.service.js           # calls the pipeline over HTTP (mock fallback)
-      forecast.service.js
+      forecast.service.js         # (US2.2 - outside current AC scope)
       google.service.js           # Google Routes API (mock fallback)
       pedestrian.service.js       # live counts (mock fallback)
     repositories/
@@ -240,9 +281,60 @@ I own the security workstream; each of these is deliberate:
   persisted. `congestionPointId` is derived deterministically from coordinates
   rather than stored, so dismissed-prompt memory lives in the (accountless)
   frontend.
-- **"Unknown" beats a guessed rating.** Data missing or older than 60 minutes
-  returns `Unknown`, because presenting stale crowd data as current is worse
-  than saying nothing for a user choosing a route to avoid a sensory ambush.
+- **"Unknown" beats a guessed rating.** A segment with no live sensor coverage
+  is `Unknown` (never scored), because presenting invented crowd data as current
+  is worse than saying nothing for a user choosing a route to avoid a sensory
+  ambush. (Per AC 1.1.2, data that is merely *stale* — older than **30 minutes**
+  — keeps its rating but is flagged via `dataState: "stale"`; staleness no longer
+  blanks the rating to `Unknown`.)
+
+---
+
+## Refuge type mapping (AC 2.1.1 / 2.1.2)
+
+`refugeType` is derived from the Landmark `theme` + `sub_theme` (matched
+case-insensitively, first match wins):
+
+| Matches (in theme/sub_theme) | `refugeType` | `indoorOutdoor` | `attributes` |
+|------------------------------|--------------|-----------------|--------------|
+| `library` | Library | indoor | `["Indoor"]` |
+| `garden`, `park`, `reserve` | Park | outdoor | `[]` |
+| `cafe`, `coffee` | Quiet cafe | indoor | `["Indoor"]` |
+| `gallery`, `museum` | Gallery or museum | indoor | `["Indoor"]` |
+| `worship`, `cathedral`, `church`, `chapel`, `temple`, `mosque`, `synagogue` | Place of worship | indoor | `["Indoor"]` |
+| `hall` | Community hall | indoor | `["Indoor"]` |
+| `theatre` | Theatre | indoor | `["Indoor"]` |
+| anything else | Public space | null | `[]` |
+
+`attributes` only ever contains `"Indoor"` today, because that is the **only**
+tag defensible from the dataset. AC 2.1.2's other example tags — `Seated`,
+`Quiet`, `Low-light` — are **not** in the Landmarks data, so we never claim them;
+`[]` is the honest answer (which AC 2.1.2's "attributes unavailable" exception
+anticipates).
+
+---
+
+## Fields we always return null (source data does not contain them)
+
+The acceptance criteria were written as if some data exists that our sources do
+not actually provide. These fields are therefore **always `null`** (or an empty
+set), never invented. This needs to be visible, not buried:
+
+| Field | Endpoint | Dataset that lacks it | AC that assumes it |
+|-------|----------|-----------------------|--------------------|
+| `openingHoursToday` | refuges | City of Melbourne **Landmarks** (no opening hours) | 2.1.2 opening hours, 2.1.3 "Closed now" |
+| `openingHoursKnown` (always `false`) | refuges | Landmarks | 2.1.2 |
+| `photoUrl` | refuges | Landmarks (no photos) | 2.1.2 photo / default icon |
+| `accessibleEntrance` | refuges | Landmarks (no accessibility/entrance data) | 2.1.3 "pin at the accessible entrance" |
+| `attributes` beyond `Indoor` | refuges | Landmarks (no seating/noise/lighting) | 2.1.2 Seated / Quiet / Low-light |
+| `indoorOutdoor` when the theme is ambiguous | refuges | Landmarks (inferred from theme only) | 2.1.2 closed-venue rule |
+
+**Consequence for AC 2.1.2 / 2.1.3 open-vs-closed logic:** because there are no
+opening hours, the backend **cannot** determine whether a refuge is open or
+closed. It exposes `indoorOutdoor` so the frontend *could* apply the
+"outdoor spaces still allow directions, indoor venues disabled when closed" rule
+*if* an opening-hours source is added later — but today "Closed now" cannot be
+produced. Flagged in open questions.
 
 ---
 
@@ -289,3 +381,15 @@ Also awaiting non-config answers:
    pipeline stores `Sensing_Date`/`HourDay` as **Melbourne local** values (which
    matches how City of Melbourne publishes the data). Please confirm the pipeline
    doesn't convert to UTC on ingest.
+6. **Opening hours / open-closed (AC 2.1.2 & 2.1.3).** The AC assumes we can show
+   "Open until 5:00 PM" / "Closed now" and disable directions for a closed indoor
+   venue. The **Landmarks dataset has no opening hours**, so the backend cannot
+   determine open/closed at all (`openingHoursToday` and `openingHoursKnown` are
+   always null/false). Do we (a) add an opening-hours data source, (b) drop the
+   open/closed behaviour for this iteration, or (c) accept "hours unavailable"
+   everywhere? This is a scope decision, not something code can solve.
+7. **Photos & accessible entrance (AC 2.1.2 & 2.1.3).** Same problem: the source
+   has no `photoUrl` and no accessible-entrance coordinates, so both are always
+   null. Confirm these ACs are deferred or point us at a data source.
+8. **Reroute & forecast scope (US1.3 / US2.2).** These endpoints exist and work
+   but are **not** in the signed-off AC document. Keep, hide, or schedule?
