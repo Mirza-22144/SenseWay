@@ -9,8 +9,7 @@ export class ApiRequestError extends Error {
   }
 }
 
-// POST /api/routes — see backend/API-CONTRACT.md. departureTime/preferences are
-// left to their server-side defaults for Story 1.1.
+// POST /api/routes — see backend/API-CONTRACT.md.
 export async function fetchRoutes({ start, destination }) {
   let response;
   try {

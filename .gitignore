@@ -29,6 +29,12 @@ ENV-NOTES.md
 .DS_Store
 Thumbs.db
 
+# local/personal tool settings (machine-specific, not shared config)
+.mcp.json
+
+# Microsoft Office temporary/lock files (e.g. ~$report.docx)
+~$*
+
 ### AL ###
 # Template for AL projects for Dynamics 365 Business Central
 # launch.json folder
@@ -42,6 +48,3 @@ rad.json
 *.bclicense
 *.flf
 TestResults.xml
-
-# Microsoft Office temporary/lock files (e.g. ~$report.docx)
-~$*

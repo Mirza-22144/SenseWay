@@ -6,15 +6,12 @@ const {
   validateNumberInRange,
 } = require("./validationHelpers");
 
-/**
- * Validate GET /api/refuges/nearby query params. walkingMinutes is optional and
- * defaults to 5; it is capped at 30 so a caller can't request an absurd radius.
- */
+// validates GET /api/refuges/nearby - walkingMinutes optional, default 5, capped at 30
 function validateRefugeQuery(req, res, next) {
   const details = [];
   const q = req.query || {};
 
-  // Query params arrive as strings; coerce lat/lon before range-checking.
+  // query params arrive as strings - coerce before range-checking
   const coords = validateCoordinatePair(
     {
       latitude: q.latitude !== undefined ? Number(q.latitude) : undefined,

@@ -3,6 +3,7 @@ import { GoogleMap, Marker } from "@react-google-maps/api";
 const MAP_CONTAINER_STYLE = { width: "100%", height: "460px", borderRadius: "12px" };
 const DEFAULT_CENTER = { lat: -37.8136, lng: 144.9631 };
 
+// pin colour by indoor/outdoor, bigger + highlighted when selected
 function refugeIconFor(refuge, isSelected) {
   return {
     path: window.google.maps.SymbolPath.CIRCLE,
@@ -14,6 +15,7 @@ function refugeIconFor(refuge, isSelected) {
   };
 }
 
+// blue pin marking the user's search origin
 const ORIGIN_ICON = () => ({
   path: window.google.maps.SymbolPath.CIRCLE,
   scale: 8,
@@ -23,8 +25,6 @@ const ORIGIN_ICON = () => ({
   strokeWeight: 2,
 });
 
-// AC 2.1.1 supporting visual: refuges plotted on a map with a legend, styled
-// to match the Figma "Refuge Map" component (node 40:338).
 export default function RefugeMap({ hasMapsKey, isLoaded, loadError, origin, refuges, selectedRefugeId, onSelect }) {
   if (!hasMapsKey) {
     return (

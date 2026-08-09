@@ -9,10 +9,14 @@ behind this backend. The frontend only ever talks to us. That is why the Google
 key never reaches the browser, why the frontend developer isn't blocked waiting
 on integrations, and why all sensory scoring lives in one place.
 
-> **This is mock-first.** With **no credentials at all**, every endpoint returns
-> realistic Melbourne CBD data so the frontend can be built today. When the team
-> supplies a Google key / DB credentials / the pipeline URL, each integration
-> switches to live behind an env check — a **config change, not a code change**.
+> **No mock fallback.** Google Maps, the database, and the data pipeline are all
+> **required** upstreams — `GOOGLE_MAPS_API_KEY`, `DB_HOST`/`DB_PORT`/`DB_NAME`/
+> `DB_USER`/`DB_PASSWORD`, and `PIPELINE_URL` must all be set in `.env` for the
+> app to actually work. The one exception is pedestrian/DB data specifically:
+> a segment with no live sensor data degrades honestly to "no live data" (grey,
+> `Unknown`) rather than failing the request, since that's already a normal,
+> expected product state (AC 1.2.1) — everything else throws an honest
+> `502 UPSTREAM_UNAVAILABLE` instead of ever serving fabricated data.
 
 ---
 
@@ -20,7 +24,9 @@ on integrations, and why all sensory scoring lives in one place.
 
 - **Node.js ≥ 18** (developed and tested on Node 26). Uses the built-in global
   `fetch`, `AbortController`, and the built-in test runner.
-- No database or API keys required to run in mock mode.
+- `GOOGLE_MAPS_API_KEY`, DB credentials, and `PIPELINE_URL` must all be set in
+  `.env` — see `.env.example`. Without them, the corresponding endpoints return
+  `502 UPSTREAM_UNAVAILABLE` rather than running at all.
 
 ## Install & run
 
@@ -136,13 +142,14 @@ Every failure (including 404) returns:
 | 400 | `MALFORMED_JSON` | body is not valid JSON |
 | 404 | `NOT_FOUND` | unknown endpoint |
 | 413 | `PAYLOAD_TOO_LARGE` | body over the 10kb limit |
-| 502 | `UPSTREAM_UNAVAILABLE` | reserved — see note below |
+| 502 | `UPSTREAM_UNAVAILABLE` | Google (routes) or the pipeline (refuges) is unconfigured or the call failed — see API-CONTRACT.md |
 | 500 | `INTERNAL_ERROR` | anything unexpected; generic message only |
 
-> **About 502:** every upstream currently *degrades to mock* on failure rather
-> than failing the request, so `UPSTREAM_UNAVAILABLE` is defined but not emitted
-> in this iteration. It becomes live once we disable mock fallback for
-> production (a single policy switch), so the frontend can code for it now.
+> **About 502:** Google and the pipeline are required upstreams with no mock
+> fallback, so a missing credential or a failed call throws `UPSTREAM_UNAVAILABLE`
+> immediately. Pedestrian/DB data is the exception — it degrades a segment to
+> "no live data" instead, since partial/no sensor coverage is already a normal
+> product state, not an error.
 
 ---
 
@@ -172,13 +179,12 @@ backend/
                                   #   sensorCoverage, ratingReason, quieter alt)
       route.service.js            # calmest-first orchestration
       reroute.service.js          # (US1.3 - outside current AC scope)
-      refuge.service.js           # calls the pipeline over HTTP (mock fallback)
+      refuge.service.js           # calls the pipeline over HTTP; no mock fallback
       forecast.service.js         # (US2.2 - outside current AC scope)
-      google.service.js           # Google Routes API (mock fallback)
-      pedestrian.service.js       # live counts (mock fallback)
+      google.service.js           # Google Routes API; no mock fallback
+      pedestrian.service.js       # live counts; degrades to "no live data", never mock
     repositories/
       pedestrian.repository.js    # ALL SQL lives here; parameterised only
-    data/                         # realistic Melbourne CBD mock fixtures
     utils/                        # geo, ids, polyline, crowd scaling, time
   tests/                          # Node built-in test runner
   API-CONTRACT.md
@@ -190,18 +196,20 @@ API`. Each layer only talks to the next one down.
 
 ---
 
-## Mock vs live
+## Live integrations
 
-Same function signature on both paths, so the response shape never changes.
+No mock fallback remains anywhere in this backend. Same function signature
+regardless of outcome, so the response shape never changes.
 
-| Integration | Mock path (today) | Live path (written, waiting on) | To go live, set |
-|-------------|-------------------|----------------------------------|-----------------|
-| Candidate routes | rich mock routes in `data/mockRoutes.js` | real Google Routes API call, alternatives, decoded polyline, per-segment scoring | `GOOGLE_MAPS_API_KEY` |
-| Pedestrian counts / nearest sensor | mock hourly curve + mock sensor | real parameterised SQL against `SENSOR_LOCATION`, `PEDESTRIAN_HOUR_COUNT`, `PEDESTRIAN_MINUTE_COUNT` | `DB_*` |
-| Refuge spaces | mock landmarks filtered by radius | real HTTP call to the pipeline's `/refuge/nearby` | `PIPELINE_URL` |
+| Integration | Behaviour | Requires |
+|-------------|-----------|-----------|
+| Candidate routes | Real Google Routes API call, alternatives, decoded polyline, per-segment scoring. Unconfigured or a failed call throws `502 UPSTREAM_UNAVAILABLE`. | `GOOGLE_MAPS_API_KEY` |
+| Pedestrian counts / nearest sensor | Real parameterised SQL against `SENSOR_LOCATION`, `PEDESTRIAN_HOUR_COUNT`, `PEDESTRIAN_MINUTE_COUNT`. Unconfigured or a failed query degrades that segment to "no live data" (`Unknown`, grey) rather than erroring the whole route - a segment without sensor coverage is already a normal, expected state. | `DB_*` |
+| Refuge spaces | Real HTTP call to the pipeline's `/refuge/nearby` (one retry on transient failure). Unconfigured or a failed call throws `502 UPSTREAM_UNAVAILABLE`. | `PIPELINE_URL` |
 
-`dataSource` in the response reports which happened: `"mock"`, `"live"`, or
-`"partial"` (e.g. live Google geometry scored with mock pedestrian data).
+`dataSource` in the `/api/routes` response reports which happened: `"live"`
+(at least one segment got a real score) or `"partial"` (live geometry, but no
+segment had sensor coverage - honest, not an error).
 
 ---
 
@@ -338,17 +346,19 @@ produced. Flagged in open questions.
 
 ---
 
-## Blocked on the team
+## Required configuration
 
-None of these block the mock-first build — the frontend can proceed today — but
-each is needed to switch an integration to live. All are **config changes**.
+All of the below are now connected and required for this app to function —
+none have a mock fallback (pedestrian/DB data is the one exception: it
+degrades honestly per-segment instead of failing). All are **config changes**
+in `.env`, never code changes.
 
-| Need | Env variable | What the backend does **without** it | What changes **the moment it arrives** |
-|------|--------------|--------------------------------------|----------------------------------------|
-| **Google Maps API key** (with Routes API enabled) | `GOOGLE_MAPS_API_KEY` | serves mock candidate routes, `dataSource:"mock"` | real Google Routes call runs; geometry becomes live |
-| **Database read credentials** | `DB_HOST`/`DB_PORT`/`DB_NAME`/`DB_USER`/`DB_PASSWORD` | pedestrian counts & forecast use the mock curve | real parameterised SQL runs against the real tables |
-| **Pipeline Cloud Run URL** | `PIPELINE_URL` | refuges come from mock landmarks | real `/refuge/nearby` HTTP call runs |
-| **Deployed frontend origin** (Firebase Hosting URL) | `CORS_ORIGINS` | only `http://localhost:5173` is allowed | deployed frontend can call the API from the browser |
+| Need | Env variable | What the backend does **without** it |
+|------|--------------|--------------------------------------|
+| **Google Maps API key** (with Routes API enabled) | `GOOGLE_MAPS_API_KEY` | `POST /api/routes` (and reroute) throw `502 UPSTREAM_UNAVAILABLE` |
+| **Database read credentials** | `DB_HOST`/`DB_PORT`/`DB_NAME`/`DB_USER`/`DB_PASSWORD` | segments degrade to "no live data" (`Unknown`, grey) instead of a crowd score; forecast returns no sensor |
+| **Pipeline Cloud Run URL** | `PIPELINE_URL` | `GET /api/refuges/nearby` throws `502 UPSTREAM_UNAVAILABLE` |
+| **Deployed frontend origin** (Firebase Hosting URL) | `CORS_ORIGINS` | only `http://localhost:5173` is allowed |
 
 Also awaiting non-config answers:
 - **Frontend owner** to sign off the response shapes in `API-CONTRACT.md`.

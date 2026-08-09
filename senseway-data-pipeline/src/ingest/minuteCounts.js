@@ -7,6 +7,8 @@ const { pool } = require('../db');
 const CSV_URL =
   'https://data.melbourne.vic.gov.au/api/records/1.0/download/?dataset=pedestrian-counting-system-past-hour-counts-per-minute&format=csv';
 
+const BATCH_SIZE = 500;
+
 function parseCsvLine(line) {
   return line.split(';').map((v) => v.trim());
 }
@@ -16,10 +18,30 @@ async function getValidLocationIds() {
   return new Set(res.rows.map((r) => String(r.location_id)));
 }
 
+async function insertBatch(rows) {
+  if (rows.length === 0) return;
+  const values = [];
+  const placeholders = rows.map((r, i) => {
+    const base = i * 5;
+    values.push(r.sensingDatetime, r.locationId, r.direction1, r.direction2, r.total);
+    return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5})`;
+  });
+  await pool.query(
+    `INSERT INTO PEDESTRIAN_MINUTE_COUNT
+       (Sensing_DateTime, Location_ID, Direction_1, Direction_2, Total_of_Direction)
+     VALUES ${placeholders.join(', ')}
+     ON CONFLICT (Sensing_DateTime, Location_ID) DO NOTHING`,
+    values
+  );
+}
+
 async function ingestMinuteCounts() {
   const validLocationIds = await getValidLocationIds();
 
-  const res = await fetch(CSV_URL);
+  const bustUrl = `${CSV_URL}&_=${Date.now()}`;
+  const res = await fetch(bustUrl, {
+    headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
+  });
   if (!res.ok) {
     throw new Error(`Minute counts CSV download failed: ${res.status} ${res.statusText}`);
   }
@@ -39,6 +61,7 @@ async function ingestMinuteCounts() {
   let skippedMissingFields = 0;
   let skippedUnknownSensor = 0;
   let skippedNoUsableCount = 0;
+  let batch = [];
 
   for (let i = 1; i < lines.length; i++) {
     const cols = parseCsvLine(lines[i]);
@@ -56,14 +79,24 @@ async function ingestMinuteCounts() {
     if ((total == null || isNaN(total)) && d1 != null && d2 != null) total = d1 + d2;
     if (total == null || isNaN(total)) { skippedNoUsableCount++; continue; }
 
-    await pool.query(
-      `INSERT INTO PEDESTRIAN_MINUTE_COUNT
-         (Sensing_DateTime, Location_ID, Direction_1, Direction_2, Total_of_Direction)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (Sensing_DateTime, Location_ID) DO NOTHING`,
-      [sensingDatetime, locId, isNaN(d1) ? null : d1, isNaN(d2) ? null : d2, total]
-    );
-    inserted++;
+    batch.push({
+      sensingDatetime,
+      locationId: locId,
+      direction1: isNaN(d1) ? null : d1,
+      direction2: isNaN(d2) ? null : d2,
+      total,
+    });
+
+    if (batch.length >= BATCH_SIZE) {
+      await insertBatch(batch);
+      inserted += batch.length;
+      batch = [];
+    }
+  }
+
+  if (batch.length > 0) {
+    await insertBatch(batch);
+    inserted += batch.length;
   }
 
   return { inserted, skippedMissingFields, skippedUnknownSensor, skippedNoUsableCount, total: lines.length - 1 };

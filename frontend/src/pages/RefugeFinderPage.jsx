@@ -4,15 +4,15 @@ import RefugeCardList from "../components/RefugeCardList";
 import RefugeMap from "../components/RefugeMap";
 import RefugeDetailsModal from "../components/RefugeDetailsModal";
 import MapView from "../components/MapView";
+import RouteCardList from "../components/RouteCardList";
 import RouteSummary from "../components/RouteSummary";
+import SensoryDetailsModal from "../components/SensoryDetailsModal";
+import TurnByTurnModal from "../components/TurnByTurnModal";
 import Banner from "../components/Banner";
 import { useGoogleMapsLoader } from "../hooks/useGoogleMapsLoader";
 import { fetchNearbyRefuges } from "../services/refugesApi";
 import { fetchRoutes, ApiRequestError } from "../services/routesApi";
 
-// User Story 2.1 (Sensory Refuge Location Finder): AC 2.1.1 search/list/map,
-// AC 2.1.2 details modal, AC 2.1.3 directions sub-view. Layout matches the
-// Figma "Find Nearby Quiet Refuge Spaces" frame (node 40:216).
 export default function RefugeFinderPage() {
   const { hasMapsKey, isLoaded, loadError } = useGoogleMapsLoader();
 
@@ -23,18 +23,23 @@ export default function RefugeFinderPage() {
   const [selectedRefugeId, setSelectedRefugeId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [banner, setBanner] = useState(null);
+  const [hasSearched, setHasSearched] = useState(false);
   const [modalRefuge, setModalRefuge] = useState(null);
 
-  // Directions sub-view (AC 2.1.3)
+  // Directions sub-view
   const [mode, setMode] = useState("search"); // "search" | "directions"
-  const [directions, setDirections] = useState(null); // { routes, recommendedRouteId, fastestRouteId, quieterAlternativeRouteId, selectedRouteId, destinationRefuge }
+  const [directions, setDirections] = useState(null);
   const [directionsLoading, setDirectionsLoading] = useState(false);
+  const [navigationRoute, setNavigationRoute] = useState(null);
+  const [modalRoute, setModalRoute] = useState(null);
 
+  // searches for refuges near origin, stores results
   async function handleFindRefuges() {
     if (!origin) return;
     setLoading(true);
     setBanner(null);
     setSelectedRefugeId(null);
+    setHasSearched(true);
 
     try {
       const data = await fetchNearbyRefuges({
@@ -42,11 +47,7 @@ export default function RefugeFinderPage() {
         longitude: origin.longitude,
         walkingMinutes,
       });
-      const fetchedRefuges = data.refuges || [];
-      setRefuges(fetchedRefuges);
-      if (fetchedRefuges.length === 0) {
-        setBanner({ variant: "warning", text: "No nearby sensory refuges found." });
-      }
+      setRefuges(data.refuges || []);
     } catch (error) {
       setRefuges([]);
       if (error instanceof ApiRequestError) {
@@ -59,14 +60,12 @@ export default function RefugeFinderPage() {
     }
   }
 
+  // fetches a route to the refuge and switches into the directions sub-view
   async function handleGetDirections(refuge) {
     setDirectionsLoading(true);
     setBanner(null);
 
-    // AC 2.1.3: "If the refuge is inside a larger complex, display the pin at
-    // the accessible entrance" — accessibleEntrance is always null today (no
-    // such data exists yet), so this falls back to the refuge's own
-    // coordinates, but will route to the entrance once that field is populated.
+    // accessibleEntrance is always null today - falls back to refuge coords.
     const destinationPoint = refuge.accessibleEntrance || { latitude: refuge.latitude, longitude: refuge.longitude };
 
     try {
@@ -87,7 +86,7 @@ export default function RefugeFinderPage() {
         recommendedRouteId: data.recommendedRouteId,
         fastestRouteId: data.fastestRouteId || null,
         quieterAlternativeRouteId: data.quieterAlternativeRouteId || null,
-        selectedRouteId: data.recommendedRouteId || fetchedRoutes[0]?.routeId || null,
+        selectedRouteId: null, // nothing selected until the user picks a card
         destinationRefuge: refuge,
         destinationPoint,
       });
@@ -104,6 +103,12 @@ export default function RefugeFinderPage() {
     }
   }
 
+  // updates just the selected route inside the directions state
+  function handleSelectDirectionsRoute(routeId) {
+    setDirections((prev) => (prev ? { ...prev, selectedRouteId: routeId } : prev));
+  }
+
+  // leaves the directions sub-view, back to the refuge's details modal
   function handleBack() {
     setMode("search");
     setBanner(null);
@@ -115,7 +120,20 @@ export default function RefugeFinderPage() {
 
   const visibleRefuges = refuges.filter((refuge) => refugeType === "all" || refuge.indoorOutdoor === refugeType);
   const directionsRoute = directions?.routes.find((route) => route.routeId === directions.selectedRouteId) || null;
+  const directionsFastestRoute =
+    directions?.routes.find((route) => route.routeId === directions.fastestRouteId) || null;
 
+  // Suppressed when the search-level banner already shows this same message.
+  const directionsLiveDataUnavailable =
+    directionsRoute?.dataState === "unavailable" && banner?.text !== "Live sensory data unavailable.";
+  const directionsShowNoQuieterAlternativeNote =
+    Boolean(directions) &&
+    !directionsLiveDataUnavailable &&
+    !directions.quieterAlternativeRouteId &&
+    Boolean(directionsFastestRoute) &&
+    directionsFastestRoute.highCrowdDistanceMetres > 0;
+
+  // directions sub-view: same route-picking UI as HomePage, scoped to one refuge
   if (mode === "directions" && directions) {
     return (
       <div className="mx-auto flex max-w-[1440px] flex-col gap-8 px-16 py-8">
@@ -132,28 +150,61 @@ export default function RefugeFinderPage() {
         {banner && <Banner variant={banner.variant}>{banner.text}</Banner>}
 
         {directions.routes.length > 0 && (
-          <div className="flex flex-col gap-5">
-            <MapView
-              hasMapsKey={hasMapsKey}
-              isLoaded={isLoaded}
-              loadError={loadError}
-              routes={directions.routes}
-              selectedRouteId={directions.selectedRouteId}
-              start={origin}
-              destination={directions.destinationPoint}
-            />
-            <RouteSummary
-              route={directionsRoute}
-              recommendedRouteId={directions.recommendedRouteId}
-              fastestRouteId={directions.fastestRouteId}
-              quieterAlternativeRouteId={directions.quieterAlternativeRouteId}
-            />
+          <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
+            {/* left column: route cards */}
+            <div className="flex w-full flex-col gap-5 lg:w-[540px] lg:shrink-0">
+              <p className="text-sm font-medium text-muted">ROUTE OPTIONS</p>
+              {!directionsRoute && (
+                <Banner variant="brand">Select a route below to preview it on the map.</Banner>
+              )}
+              {directionsLiveDataUnavailable && (
+                <Banner variant="warning">Live sensory data unavailable.</Banner>
+              )}
+              {directionsShowNoQuieterAlternativeNote && (
+                <Banner variant="brand">No suitable quieter alternative available.</Banner>
+              )}
+              <RouteCardList
+                routes={directions.routes}
+                recommendedRouteId={directions.recommendedRouteId}
+                fastestRouteId={directions.fastestRouteId}
+                quieterAlternativeRouteId={directions.quieterAlternativeRouteId}
+                selectedRouteId={directions.selectedRouteId}
+                onSelect={handleSelectDirectionsRoute}
+                onShowDetails={setModalRoute}
+                onGetNavigation={setNavigationRoute}
+              />
+            </div>
+
+            {/* right column: map + selected-route summary */}
+            <div className="flex w-full flex-col gap-5">
+              <h2 className="text-xl font-semibold text-primary">Route Map</h2>
+              <MapView
+                hasMapsKey={hasMapsKey}
+                isLoaded={isLoaded}
+                loadError={loadError}
+                routes={directions.routes}
+                selectedRouteId={directions.selectedRouteId}
+                recommendedRouteId={directions.recommendedRouteId}
+                start={origin}
+                destination={directions.destinationPoint}
+              />
+              <RouteSummary
+                route={directionsRoute}
+                recommendedRouteId={directions.recommendedRouteId}
+                fastestRouteId={directions.fastestRouteId}
+                quieterAlternativeRouteId={directions.quieterAlternativeRouteId}
+              />
+            </div>
           </div>
         )}
+
+        <SensoryDetailsModal route={modalRoute} onClose={() => setModalRoute(null)} />
+        <TurnByTurnModal route={navigationRoute} onClose={() => setNavigationRoute(null)} />
       </div>
     );
   }
 
+  // search view: origin form + refuge list/map
   return (
     <div className="mx-auto flex max-w-[1440px] flex-col gap-8 px-16 py-8">
       <div className="flex flex-col gap-2">
@@ -164,6 +215,7 @@ export default function RefugeFinderPage() {
       </div>
 
       <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
+        {/* left column: search form + refuge cards */}
         <div className="flex w-full flex-col gap-5 lg:w-[540px] lg:shrink-0">
           <RefugeSearchBar
             hasMapsKey={hasMapsKey}
@@ -180,6 +232,10 @@ export default function RefugeFinderPage() {
 
           {banner && <Banner variant={banner.variant}>{banner.text}</Banner>}
 
+          {!banner && !loading && hasSearched && visibleRefuges.length === 0 && (
+            <Banner variant="warning">No nearby sensory refuges found.</Banner>
+          )}
+
           {visibleRefuges.length > 0 && (
             <>
               <p className="text-sm font-medium text-muted">REFUGES NEARBY</p>
@@ -193,6 +249,7 @@ export default function RefugeFinderPage() {
           )}
         </div>
 
+        {/* right column: map */}
         {visibleRefuges.length > 0 && (
           <div className="flex w-full flex-col gap-5">
             <h2 className="text-xl font-semibold text-primary">Refuge Map</h2>

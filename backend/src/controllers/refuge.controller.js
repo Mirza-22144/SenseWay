@@ -10,8 +10,7 @@ async function getNearby(req, res) {
     walkingMinutes
   );
 
-  // The service's internal `source` field is for our own dataSource bookkeeping;
-  // the public refuge contract does not expose it.
+  // result.source is internal bookkeeping only - not part of the public contract
   res.json({
     origin: result.origin,
     walkingMinutes: result.walkingMinutes,

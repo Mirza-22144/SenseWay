@@ -1,8 +1,6 @@
 import RefugeCard from "./RefugeCard";
 
-// AC 2.1.1: sorted by walking time ascending (the API already returns them
-// this way — nearby refuges are ordered by distanceMetres). The nearest one
-// gets the "Recommended" badge.
+// refuges is already sorted nearest-first by the API; index 0 gets the badge.
 export default function RefugeCardList({ refuges, selectedRefugeId, onSelect, onViewDetails }) {
   if (!refuges || refuges.length === 0) return null;
 

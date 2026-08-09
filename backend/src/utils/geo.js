@@ -1,27 +1,15 @@
 "use strict";
 
-/**
- * Geospatial helpers and the constants that define "where this app is allowed
- * to operate".
- */
-
-// AC1 of the refuge story is a *walking time*, not a raw distance. We convert
-// with a single named constant so the whole codebase agrees on how fast Freddy
-// walks. ~80 m/min ≈ 4.8 km/h, a comfortable urban walking pace.
+// ~80 m/min ≈ 4.8 km/h, a comfortable urban walking pace
 const WALKING_SPEED_METRES_PER_MINUTE = 80;
 
-// Global sanity bounds.
+// global sanity bounds
 const LAT_MIN = -90;
 const LAT_MAX = 90;
 const LON_MIN = -180;
 const LON_MAX = 180;
 
-// Greater Melbourne bounding box.
-// WHY: coordinates are the only lever a caller has that costs us real money -
-// every /api/routes call can become a paid Google Routes request. Restricting
-// to greater Melbourne stops someone running up the bill by requesting routes
-// in, say, London, and matches the fact that our pedestrian/landmark data only
-// covers Melbourne anyway.
+// restricts /api/routes to where our data covers and caps paid Google API calls
 const MELBOURNE_BOUNDS = Object.freeze({
   latMin: -38.6,
   latMax: -37.4,
@@ -61,12 +49,7 @@ function toRadians(deg) {
   return (deg * Math.PI) / 180;
 }
 
-/**
- * Great-circle distance in metres between two lat/lon points. This is the same
- * Haversine maths the pipeline's refugeFinder.js does in SQL; we reproduce it
- * in JS for scoring points that never touch the database (mock data, Google
- * geometry).
- */
+// great-circle distance in metres - same maths as refugeFinder.js's SQL version
 function haversineMetres(lat1, lon1, lat2, lon2) {
   const dLat = toRadians(lat2 - lat1);
   const dLon = toRadians(lon2 - lon1);

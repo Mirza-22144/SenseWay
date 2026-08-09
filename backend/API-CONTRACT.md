@@ -5,8 +5,11 @@ acceptance criteria** (US1.1, US1.2, US2.1). Base URL in development:
 `http://localhost:5000`.
 
 Every response, success or failure, is JSON. Every example below was **copied
-from the real running server** (mock mode, no credentials), not hand-written.
-Timestamps will differ per request.
+from the real running server** against live Google/DB/pipeline credentials,
+not hand-written. Timestamps, IDs, and route/refuge content will differ per
+request since there is no mock fallback anywhere in this backend - every
+integration is a required upstream (see "Errors" below for what each one
+returns when it's unavailable).
 
 > `/api/routes/reroute` and `/api/forecast` also exist but sit **outside the
 > current acceptance-criteria scope** (they map to US1.3 / US2.2, which are not
@@ -21,11 +24,13 @@ Timestamps will differ per request.
 - Crowd scores are integers `0–100`. Bands: `0–30` Low, `31–70` Moderate,
   `71–100` High. Uncovered segments carry **no score** (`null`) and rate
   `Unknown`.
-- `dataSource` = provenance: `"mock"` / `"live"` / `"partial"`.
+- `dataSource` = provenance: `"live"` (geometry + at least one scored segment)
+  or `"partial"` (live geometry, but no segment had sensor coverage - honest,
+  not an error).
 - `dataState` (per route) = the *state the UI keys its message off*: `"live"` /
-  `"stale"` / `"unavailable"`. This is **not** the same as `dataSource`: in mock
-  mode the fixtures present as fresh (`dataState:"live"`) so the frontend can
-  build the happy path, while `dataSource` stays `"mock"`.
+  `"stale"` / `"unavailable"`. Independent of `dataSource`: a route can have
+  live geometry (`dataSource:"live"` at the top level) while its own segments
+  are stale or uncovered (`dataState:"stale"`/`"unavailable"` on that route).
 
 ---
 
@@ -58,6 +63,7 @@ guessing required.
 | 1.2.3 | no alternative card when data unavailable | `quieterAlternativeRouteId === null` when recommended `dataState === "unavailable"` |
 | 2.1.1 | list of refuges, nearest first | `GET /api/refuges/nearby` → `refuges` (sorted by `walkingMinutes` asc) |
 | 2.1.1 | "No nearby sensory refuges found." | `count === 0` |
+| 2.1.1 | "Refuge information is currently unavailable." | `GET /api/refuges/nearby` → 502 `UPSTREAM_UNAVAILABLE` (pipeline down/unconfigured) |
 | 2.1.1 | name / type / walking time / attributes | `refuges[].name`, `.refugeType`, `.walkingMinutes`, `.attributes` |
 | 2.1.2 | "Opening hours not available." | `refuges[].openingHoursToday === null` (and top-level `openingHoursKnown === false`) |
 | 2.1.2 | photo / default icon by type | `refuges[].photoUrl === null` → use `refugeType` for the icon |
@@ -98,8 +104,9 @@ threshold=70):
 }
 ```
 
-**200** (top-level + the recommended route; `route-3` segment shown to
-illustrate the uncovered/grey state — all real output):
+**200** (top-level + the recommended route; illustrative — exact route IDs,
+count, and content vary per request now that geometry always comes live from
+Google, unlike the old deterministic mock fixtures):
 ```json
 {
     "query": { "start": {...}, "destination": {...}, "departureTime": "2026-08-05T22:15:00.000Z", "preferences": { "avoidHighDensity": true, "crowdThreshold": 70 } },
@@ -119,10 +126,10 @@ illustrate the uncovered/grey state — all real output):
             "minutesSlowerThanFastest": 4,
             "minutesSlowerThanRecommended": 0,
             "highCrowdDistanceSavedMetres": 880,
-            "polyline": "mock~littlecollins~b1n3",
+            "polyline": "<Google-encoded polyline string>",
             "crowdScore": 24,
             "sensoryRating": "Low",
-            "ratingReason": "Typical pedestrian activity on Little Collins Street.",
+            "ratingReason": "This route has a Low sensory rating because it avoids the busiest pedestrian areas and primarily passes through low-density streets.",
             "dataState": "live",
             "sensorCoverage": "full",
             "confidence": "high",
@@ -142,12 +149,17 @@ illustrate the uncovered/grey state — all real output):
             "bypassedAreas": [
                 { "name": "Bourke Street Mall", "latitude": -37.8136, "longitude": 144.9648, "crowdScore": 88, "reason": "Pedestrian density above your threshold" }
             ],
+            "steps": [
+                { "instruction": "Head north on Flinders Street", "distanceMetres": 360, "durationMinutes": 4 },
+                { "instruction": "Turn left onto Elizabeth Street", "distanceMetres": 380, "durationMinutes": 5 },
+                "..."
+            ],
             "alerts": []
         }
     ],
     "refugeSpaces": [ "...same shape as GET /api/refuges/nearby refuges[]..." ],
     "dataUpdatedAt": "2026-08-06T14:45:47.514Z",
-    "dataSource": "mock"
+    "dataSource": "live"
 }
 ```
 
@@ -167,10 +179,10 @@ illustrate the uncovered/grey state — all real output):
 ```
 
 Field notes:
-- `route-2` (fastest, 15 min) is the **most crowded** (High, `highCrowdDistanceMetres` 880). `route-1` (calmest, Low) is recommended and is the quieter alternative to the fast route.
 - The four distance buckets **sum to `distanceMetres`** for every route.
 - `minutesSlowerThanRecommended` is relative to the recommended (calmest) route and **can be negative** (a route that is faster than the recommended one).
 - `segments[].exceedsThreshold` is per-segment vs `crowdThreshold`; uncovered segments are always `false` (no score to compare).
+- `steps[]` is ordered turn-by-turn walking directions ("Get Navigation"), from Google's Routes API (`routes.legs.steps`). Each entry is `{ instruction, distanceMetres, durationMinutes }`. `instruction` can be `null` if Google didn't provide text for a given step — never fabricated.
 
 **No-routes** (start == destination) — `200`, not an error:
 ```json
@@ -261,7 +273,7 @@ Envelope: `{ "error": { "code": "...", "message": "...", "details": [ ... ] } }`
 | 400 | `MALFORMED_JSON` | body is not valid JSON |
 | 404 | `NOT_FOUND` | unknown endpoint |
 | 413 | `PAYLOAD_TOO_LARGE` | body over the 10kb limit |
-| 502 | `UPSTREAM_UNAVAILABLE` | reserved; not emitted while every upstream degrades to mock |
+| 502 | `UPSTREAM_UNAVAILABLE` | `POST /api/routes` (+ `/api/routes/reroute`) when Google is unconfigured or the call fails ("Unable to compute routes right now."). `GET /api/refuges/nearby` when the pipeline is unconfigured or the call fails (AC 2.1.1: "Refuge information is currently unavailable."). Pedestrian/DB data is the one exception: it degrades honestly to "no live data" per segment (AC 1.2.1) rather than failing the whole route, since a route with partial or no sensor coverage is already a valid, expected product state. |
 | 500 | `INTERNAL_ERROR` | anything unexpected; generic message only |
 
 **Out-of-Melbourne 400** (distinguishable per AC 1.1.1):

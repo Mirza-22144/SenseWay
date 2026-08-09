@@ -1,9 +1,7 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import LocationField from "./LocationField";
 import { isWithinMelbourne } from "../constants/melbourne";
 
-// AC 1.1.1: start/destination search + Find Route button. Matches the Figma
-// "Search" card (node 71:1018): fields stacked vertically inside a white card.
 export default function SearchBar({
   hasMapsKey,
   isLoaded,
@@ -15,7 +13,10 @@ export default function SearchBar({
   loading,
 }) {
   const [geoError, setGeoError] = useState(null);
+  const startFieldRef = useRef(null);
+  const destinationFieldRef = useRef(null);
 
+  // reads browser geolocation and sets it as the start point if within Melbourne
   function useCurrentLocation() {
     if (!navigator.geolocation) {
       setGeoError("Location services aren't available in this browser. Please choose a start point manually.");
@@ -39,12 +40,19 @@ export default function SearchBar({
     );
   }
 
-  const canFindRoute = Boolean(start && destination) && !loading;
+  // validates both fields first; only calls onFindRoute if both are OK
+  function handleFindRouteClick() {
+    const startError = startFieldRef.current?.validate();
+    const destinationError = destinationFieldRef.current?.validate();
+    if (startError || destinationError) return;
+    onFindRoute();
+  }
 
   return (
     <div className="flex flex-col gap-5 rounded-xl border border-line bg-base p-6">
       <div className="flex flex-col gap-1">
         <LocationField
+          ref={startFieldRef}
           id="start-location"
           labelText="Start Location"
           value={start}
@@ -59,6 +67,7 @@ export default function SearchBar({
       </div>
 
       <LocationField
+        ref={destinationFieldRef}
         id="destination-location"
         labelText="Destination"
         value={destination}
@@ -69,8 +78,8 @@ export default function SearchBar({
 
       <button
         type="button"
-        onClick={onFindRoute}
-        disabled={!canFindRoute}
+        onClick={handleFindRouteClick}
+        disabled={loading}
         className="w-full cursor-pointer rounded-lg bg-brand py-3 text-sm font-semibold text-inverse hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {loading ? "Finding route…" : "Find Route"}

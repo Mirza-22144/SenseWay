@@ -7,10 +7,7 @@ const {
   validateCrowdThreshold,
 } = require("./validationHelpers");
 
-/**
- * Validate POST /api/routes/reroute. Same all-problems-at-once approach and the
- * same clean-object rebuild as the route validator.
- */
+// validates POST /api/routes/reroute - same approach as validateRouteRequest
 function validateRerouteRequest(req, res, next) {
   const details = [];
   const body = req.body;

@@ -18,7 +18,7 @@ class ApiError extends Error {
   }
 }
 
-// Convenience constructors for the codes in the contract.
+// convenience constructors for the codes in the API contract
 ApiError.invalid = (details) =>
   new ApiError(400, "INVALID_REQUEST", "The request failed validation.", details);
 ApiError.notFound = (message = "Resource not found.") =>
@@ -26,13 +26,11 @@ ApiError.notFound = (message = "Resource not found.") =>
 ApiError.upstream = (message = "An upstream service was unavailable.") =>
   new ApiError(502, "UPSTREAM_UNAVAILABLE", message);
 
-// The four-argument signature is what marks this as Express's error handler.
-// Express 5 forwards errors thrown in async handlers here automatically, so
-// controllers don't need try/catch just to avoid crashing.
+// four-argument signature marks this as Express's error handler; Express 5
+// forwards async-handler errors here automatically
 // eslint-disable-next-line no-unused-vars
 function errorHandler(err, req, res, next) {
-  // Body-parser failures surface with a `type`. We translate them into our
-  // envelope so a raw parser message never reaches the browser.
+  // body-parser failures -> our envelope, not a raw parser message
   if (err && err.type === "entity.parse.failed") {
     return res.status(400).json(
       envelope("MALFORMED_JSON", "Request body is not valid JSON.")
@@ -53,9 +51,7 @@ function errorHandler(err, req, res, next) {
       .json(envelope(err.code, err.message, err.details));
   }
 
-  // Anything else is a genuine bug or an unexpected failure. Log the REAL error
-  // server-side for us, but return a generic message: a stack trace or a
-  // Postgres error string in the response would leak internals to an attacker.
+  // unexpected failure - log the real error, but never leak internals in the response
   console.error("[error] unhandled:", err);
   return res
     .status(500)

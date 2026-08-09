@@ -3,38 +3,21 @@
 const db = require("../config/database");
 
 /**
- * ALL SQL lives in the repository layer and nowhere else.
+ * All SQL lives in this layer. Conventions, matching the real schema (source
+ * of truth: senseway-data-pipeline/src/ingest):
+ *  - every query is parameterised ($1, $2, ...) - no string concatenation
+ *  - "Longtitude" is misspelled in SENSOR_LOCATION/LANDMARK - kept as-is in
+ *    SQL, aliased to correct "longitude" in results
+ *  - every selected column is aliased AS snake_case explicitly (Postgres
+ *    folds unquoted identifiers to lowercase otherwise)
+ *  - count column is Total_of_Direction (singular), matching the DB, not the
+ *    open-data API's plural field name
  *
- * Conventions used throughout this file, matching the real schema exactly (the
- * ingestion scripts in senseway-data-pipeline/src/ingest are the source of
- * truth):
- *
- *  - Every query is PARAMETERISED with $1, $2, ... - never string
- *    concatenation. This is the primary defence against SQL injection.
- *
- *  - "Longtitude" is MISSPELLED in SENSOR_LOCATION and LANDMARK. We must spell
- *    it wrong in SQL to match the column, and we alias it to the correctly
- *    spelled "longitude" in the result, exactly as the pipeline's
- *    refugeFinder.js does. The same applies to the correctly spelled Latitude.
- *
- *  - Postgres folds unquoted identifiers to lowercase, so `SELECT Location_ID`
- *    would come back as row.location_id. CONVENTION CHOSEN: we alias EVERY
- *    selected column explicitly with `AS snake_case` so the JS row keys are
- *    unambiguous to the next reader and don't depend on remembering the folding
- *    rule.
- *
- *  - The count column is Total_of_Direction (SINGULAR), even though the open
- *    data API field was total_of_directions (plural). We use the DB spelling.
- *
- * Every function returns null when the database is not configured, so services
- * can fall back to mock data. A thrown error (DB unreachable) is also treated as
- * "fall back" by the caller.
+ * Every function returns null when the DB isn't configured or a row isn't
+ * found; a thrown error means the DB itself failed.
  */
 
-/**
- * Nearest sensor to a point, using the same Haversine maths as the pipeline.
- * Returns { sensorId, name, latitude, longitude, distanceMetres } or null.
- */
+// nearest sensor to a point, same Haversine maths as the pipeline
 async function findNearestSensor(latitude, longitude) {
   const sql = `
     SELECT
@@ -67,20 +50,9 @@ async function findNearestSensor(latitude, longitude) {
   };
 }
 
-/**
- * Historical mean pedestrian count for one sensor, on one day-of-week, at one
- * hour of the day. This IS the forecast model (US2.2): the mean of matching
- * historical rows from PEDESTRIAN_HOUR_COUNT.
- *
- * dayOfWeek is JS convention (0=Sunday..6=Saturday); Postgres EXTRACT(DOW ...)
- * uses the same convention, so they line up.
- *
- * HourDay in the monthly-counts dataset is the hour of the day (0-23).
- *
- * Returns { mean, sampleSize }. sampleSize can be 0 - the caller must treat few
- * or zero rows as "Unknown / low confidence" rather than a fabricated number,
- * because this table is only a thin recent slice of the data (see README).
- */
+// forecast model: mean historical count for one sensor, day-of-week, hour.
+// dayOfWeek is JS convention (0=Sun..6=Sat), same as Postgres EXTRACT(DOW).
+// sampleSize can be 0 - caller must treat that as "Unknown", not fabricate a number.
 async function getHourlyMean(sensorId, dayOfWeek, hour) {
   const sql = `
     SELECT
@@ -102,31 +74,45 @@ async function getHourlyMean(sensorId, dayOfWeek, hour) {
   };
 }
 
+// matches the source dataset's own 15-min refresh cadence
+const RECENT_WINDOW_MINUTES = 15;
+
 /**
- * Most recent minute-level count for a sensor, from PEDESTRIAN_MINUTE_COUNT.
- * Used to score live routes and to decide whether the reading is fresh enough
- * to trust (older than 60 min -> the scoring service returns "Unknown").
+ * Mean minute-level count for a sensor over the last RECENT_WINDOW_MINUTES.
+ * Averaging (not a single newest row) smooths out normal minute-to-minute
+ * burstiness - see crowd.js's minuteCountToHourlyRate() for the next step.
+ *
+ * Window is anchored to the sensor's OWN latest row, not wall-clock NOW() -
+ * if ingestion is behind, anchoring to NOW() would wrongly report "no live
+ * data" for a sensor that has a slightly older but real reading. Freshness
+ * is judged separately downstream by comparing observedAt to NOW().
  *
  * Returns { count, observedAt } or null.
  */
-async function getLatestCount(sensorId) {
+async function getRecentMeanCount(sensorId) {
   const sql = `
     SELECT
-      m.Total_of_Direction AS count,
-      m.Sensing_DateTime   AS observed_at
+      AVG(m.Total_of_Direction)::float AS mean_count,
+      MAX(m.Sensing_DateTime)          AS observed_at
     FROM PEDESTRIAN_MINUTE_COUNT m
     WHERE m.Location_ID = $1
-    ORDER BY m.Sensing_DateTime DESC
-    LIMIT 1
+      AND m.Sensing_DateTime >= (
+        SELECT MAX(m2.Sensing_DateTime)
+        FROM PEDESTRIAN_MINUTE_COUNT m2
+        WHERE m2.Location_ID = $1
+      ) - make_interval(mins => $2::int)
   `;
-  const result = await db.query(sql, [sensorId]);
+  const result = await db.query(sql, [sensorId, RECENT_WINDOW_MINUTES]);
   if (!result || result.rows.length === 0) return null;
 
   const r = result.rows[0];
+  // AVG/MAX over zero matching rows still returns one row, with NULLs
+  if (r.mean_count == null) return null;
+
   return {
-    count: r.count == null ? null : Number(r.count),
+    count: Number(r.mean_count),
     observedAt: r.observed_at ? new Date(r.observed_at).toISOString() : null,
   };
 }
 
-module.exports = { findNearestSensor, getHourlyMean, getLatestCount };
+module.exports = { findNearestSensor, getHourlyMean, getRecentMeanCount, RECENT_WINDOW_MINUTES };

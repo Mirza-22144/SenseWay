@@ -1,5 +1,4 @@
-// Mirrors backend/src/utils/geo.js MELBOURNE_BOUNDS so client-side checks and
-// the Places Autocomplete bias agree with what the server will accept.
+// Mirrors backend/src/utils/geo.js MELBOURNE_BOUNDS.
 export const MELBOURNE_BOUNDS = Object.freeze({
   latMin: -38.6,
   latMax: -37.4,

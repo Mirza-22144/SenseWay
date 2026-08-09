@@ -1,9 +1,7 @@
-// Shared "which badge/status does this route get" logic, used by RouteCard
-// (the badge) and RouteSummary (the "SELECTED ROUTE" field), so the two never
-// disagree about what a route currently is.
+// Shared route badge/status label, used by RouteCard and RouteSummary.
 export function routeStatusLabel(route, { recommendedRouteId, fastestRouteId, quieterAlternativeRouteId }) {
   if (route.routeId === recommendedRouteId) return "Recommended";
-  if (route.routeId === quieterAlternativeRouteId) return "Alternative";
+  if (route.routeId === quieterAlternativeRouteId) return "Quieter Alternative";
   if (route.routeId === fastestRouteId) return "Fastest";
   return "Alternative";
 }

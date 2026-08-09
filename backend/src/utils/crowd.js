@@ -1,17 +1,12 @@
 "use strict";
 
-/**
- * Convert a raw pedestrian count (people per hour past a sensor) into the app's
- * 0-100 crowd score.
- *
- * WHY a fixed reference rather than something cleverer: this iteration's model
- * is deliberately simple and must be explainable to a tutor. We linearly scale
- * against a reference "very busy" hourly count and cap at 100. The reference is
- * a rough calibration, not a statistically derived threshold - stated as a
- * limitation in the README so nobody mistakes it for ground truth.
- */
+// linear scale against a fixed "very busy" hourly reference, capped at 100 -
+// a rough calibration, not a statistical threshold (see README)
 const PEAK_REFERENCE_COUNT = 1800;
 
+// count MUST be hourly-scale. PEDESTRIAN_HOUR_COUNT rows already are;
+// PEDESTRIAN_MINUTE_COUNT rows are NOT - run those through
+// minuteCountToHourlyRate() first or the score comes out artificially low.
 function countToCrowdScore(count) {
   if (typeof count !== "number" || !Number.isFinite(count) || count < 0) {
     return null;
@@ -20,4 +15,13 @@ function countToCrowdScore(count) {
   return Math.max(0, Math.min(100, score));
 }
 
-module.exports = { PEAK_REFERENCE_COUNT, countToCrowdScore };
+// extrapolates a per-minute rate to an hourly rate ("at this rate, sustained
+// for an hour") - feed the result into countToCrowdScore()
+function minuteCountToHourlyRate(minuteCount) {
+  if (typeof minuteCount !== "number" || !Number.isFinite(minuteCount)) {
+    return null;
+  }
+  return minuteCount * 60;
+}
+
+module.exports = { PEAK_REFERENCE_COUNT, countToCrowdScore, minuteCountToHourlyRate };

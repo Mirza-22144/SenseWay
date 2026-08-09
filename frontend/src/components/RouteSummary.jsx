@@ -1,8 +1,6 @@
 import { formatDistance, formatDuration, formatTimestamp } from "../utils/format";
 import { routeStatusLabel } from "../utils/routeStatus";
 
-// AC 1.1.3: refreshes when the user picks a different route card. Matches the
-// Figma under-map "Route Summary" bar (node 71:1068).
 export default function RouteSummary({ route, recommendedRouteId, fastestRouteId, quieterAlternativeRouteId }) {
   if (!route) return null;
 

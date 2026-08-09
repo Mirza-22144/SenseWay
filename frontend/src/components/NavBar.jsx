@@ -7,8 +7,7 @@ const NAV_LINKS = [
   { key: "about", label: "About" },
 ];
 
-// Top navigation matching the Figma Nav Bar component (node 18:96). "Home"
-// and "Refuges" switch the app-level view; the rest are non-interactive
+// "Home" and "Refuges" switch the app-level view; the rest are non-interactive
 // placeholders since there's no full router installed.
 export default function NavBar({ currentView = "home", onNavigate }) {
   return (

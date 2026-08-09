@@ -1,25 +1,19 @@
 import SensoryBadge from "./SensoryBadge";
-import { formatDistance, formatDuration } from "../utils/format";
+import { formatDistance, formatDuration, formatSignedMinutes } from "../utils/format";
 import { routeStatusLabel } from "../utils/routeStatus";
 
 const BADGE_CLASS = {
   Recommended: "bg-success text-inverse",
+  "Quieter Alternative": "bg-success text-inverse",
   Alternative: "bg-subtle text-secondary",
   Fastest: "bg-subtle text-secondary",
 };
 
 function statusBadge(route, ids) {
   const text = routeStatusLabel(route, ids);
-  // The quieter alternative gets the same label text ("Alternative") as a
-  // plain non-recommended route, but highlighted green like Recommended.
-  const isQuieterAlternative = text === "Alternative" && route.routeId === ids.quieterAlternativeRouteId;
-  return { text, className: isQuieterAlternative ? "bg-success text-inverse" : BADGE_CLASS[text] };
+  return { text, className: BADGE_CLASS[text] };
 }
 
-// AC 1.1.1 (colour-coded route options) + AC 1.1.3 (select an alternative
-// route, via the "View Route" button) + AC 1.2.3 (quieter-alternative
-// labeling). Matches the Figma "Route Card" component structure: status
-// badge, title, sensory chip + reason, 3-column metrics, full-width button.
 export default function RouteCard({
   route,
   isSelected,
@@ -28,6 +22,7 @@ export default function RouteCard({
   quieterAlternativeRouteId,
   onSelect,
   onShowDetails,
+  onGetNavigation,
 }) {
   const dataUnavailable = route.dataState === "unavailable";
   const badge = statusBadge(route, { recommendedRouteId, fastestRouteId, quieterAlternativeRouteId });
@@ -45,6 +40,15 @@ export default function RouteCard({
         <p className="text-lg font-semibold text-primary">{route.summary}</p>
       </div>
 
+      {/* quieter-alternative trade-off: extra time vs. high-crowd distance avoided */}
+      {route.routeId === quieterAlternativeRouteId && !dataUnavailable && (
+        <p className="text-xs font-medium text-success-ink">
+          {formatSignedMinutes(route.minutesSlowerThanRecommended)} · avoids{" "}
+          {formatDistance(route.highCrowdDistanceSavedMetres)} of high-crowd area
+        </p>
+      )}
+
+      {/* sensory chip + reason, or a plain "unavailable" pill if there's no live data */}
       {dataUnavailable ? (
         <button
           type="button"
@@ -55,7 +59,14 @@ export default function RouteCard({
         </button>
       ) : (
         <div>
-          <SensoryBadge rating={route.sensoryRating} showSuffix onClick={() => onShowDetails(route)} />
+          <div className="flex flex-wrap items-center gap-2">
+            <SensoryBadge rating={route.sensoryRating} showSuffix onClick={() => onShowDetails(route)} />
+            {route.highCrowdDistanceMetres > 0 && (
+              <span className="rounded-full bg-warning-subtle px-3 py-1 text-xs font-medium text-warning-ink">
+                Includes congested corridor
+              </span>
+            )}
+          </div>
           <p className="mt-2 text-xs text-secondary">{route.ratingReason}</p>
         </div>
       )}
@@ -75,13 +86,14 @@ export default function RouteCard({
         </div>
       </div>
 
+      {/* selects the route on first click, opens navigation once already selected */}
       <button
         type="button"
-        onClick={() => onSelect(route.routeId)}
+        onClick={() => (isSelected ? onGetNavigation(route) : onSelect(route.routeId))}
         aria-pressed={isSelected}
         className="w-full cursor-pointer rounded-lg bg-brand py-3 text-sm font-semibold text-inverse hover:brightness-95"
       >
-        View Route
+        {isSelected ? "Get Navigation" : "View Route"}
       </button>
     </div>
   );

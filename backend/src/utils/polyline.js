@@ -1,17 +1,7 @@
 "use strict";
 
-/**
- * Google's Encoded Polyline Algorithm decoder.
- *
- * WHY this is here: the real Google Routes API returns route geometry as an
- * encoded polyline string. To score a live route segment-by-segment we need the
- * actual lat/lon vertices, so we decode them here. This has no third-party
- * dependency; the algorithm is a documented, stable Google spec.
- *
- * Only exercised on the LIVE path (GOOGLE_MAPS_API_KEY present). The mock path
- * ships pre-decoded coordinates, so this decoder is not covered by the mock
- * tests - noted honestly in the README.
- */
+// decodes Google's Encoded Polyline format into lat/lon vertices, so route
+// segments can be scored point by point (no third-party dependency)
 function decode(encoded, precision = 5) {
   if (typeof encoded !== "string" || encoded.length === 0) return [];
 
