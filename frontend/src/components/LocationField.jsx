@@ -27,6 +27,11 @@ export default function LocationField({ id, labelText, onChange, hasMapsKey, isL
     autocomplete.id = id;
     autocomplete.className = FIELD_CLASS;
     autocomplete.setAttribute("placeholder", "Search a Melbourne CBD address");
+    // This app is light-themed only (no dark mode support). Without this,
+    // gmp-place-autocomplete's own theme detection overrides the page's
+    // `color-scheme: light` and renders its suggestion dropdown dark when
+    // the user's OS/browser is in dark mode - low-contrast, hard to read.
+    autocomplete.style.setProperty("color-scheme", "light");
 
     async function handleSelect({ placePrediction }) {
       try {
