@@ -2,13 +2,11 @@ import { useEffect } from "react";
 import { formatDistance, formatDuration } from "../utils/format";
 import { refugeIcon, refugeTypeLabel } from "../utils/refuge";
 
-// AC 2.1.2: refuge details panel. AC 2.1.3's "Get Directions" is triggered
-// from here. `attributes` is [] whenever the backend can't justify a tag from
-// the Landmarks data (see refuge.service.js deriveAttributes) — per the AC's
-// own exception, we omit the facilities section entirely rather than show it
-// empty. Opening hours are not shown (no source data — see backend/README.md).
-// Get Directions is never disabled as a result.
+// attributes is [] when the backend has no justified tag - facilities
+// section is omitted entirely rather than shown empty. No opening-hours data
+// exists, so Get Directions is never disabled for being "closed".
 export default function RefugeDetailsModal({ refuge, onClose, onGetDirections }) {
+  // close on Escape while the modal is open
   useEffect(() => {
     if (!refuge) return undefined;
     function onKeyDown(event) {
@@ -58,6 +56,7 @@ export default function RefugeDetailsModal({ refuge, onClose, onGetDirections })
           </div>
         </div>
 
+        {/* omitted entirely (not shown empty) when there's no justified tag */}
         {attributes.length > 0 && (
           <div className="flex flex-col gap-2">
             <p className="text-xs font-medium text-muted">AVAILABLE FACILITIES</p>

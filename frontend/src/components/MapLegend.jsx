@@ -1,8 +1,5 @@
 import { SENSORY_META } from "../utils/sensory";
 
-// AC 1.2.1: legend explaining the four segment-shading states. Styled as a
-// floating card matching the Figma "Map Legend" component, anchored to the
-// map's top-right corner by the parent (MapView).
 export default function MapLegend() {
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-line bg-base p-5 shadow-panel">

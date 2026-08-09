@@ -10,11 +10,6 @@ import Banner from "../components/Banner";
 import { useGoogleMapsLoader } from "../hooks/useGoogleMapsLoader";
 import { fetchRoutes, ApiRequestError } from "../services/routesApi";
 
-// Owns all state for User Stories 1.1 (search -> sensory-coded route options ->
-// select an alternative -> view sensory rating details) and 1.2 (congestion
-// shading, congestion summary, quieter alternative). Layout matches the
-// Figma "Home / Sensory Route Planning" and "Congested Corridor
-// Visualisation" frames: a two-column body under a page header.
 export default function HomePage({ onFindQuietSpace }) {
   const { hasMapsKey, isLoaded, loadError } = useGoogleMapsLoader();
 
@@ -30,6 +25,7 @@ export default function HomePage({ onFindQuietSpace }) {
   const [modalRoute, setModalRoute] = useState(null);
   const [navigationRoute, setNavigationRoute] = useState(null);
 
+  // calls the backend, stores the returned routes, and sets the right banner
   async function handleFindRoute() {
     if (!start || !destination) return;
 
@@ -47,18 +43,16 @@ export default function HomePage({ onFindQuietSpace }) {
       setRecommendedRouteId(data.recommendedRouteId);
       setFastestRouteId(data.fastestRouteId || null);
       setQuieterAlternativeRouteId(data.quieterAlternativeRouteId || null);
-      // Nothing is "selected" yet — the user picks explicitly (no card
-      // highlight, no Get Navigation, no per-segment map shading until then).
-      // MapView still highlights the recommended route with a thicker line by
-      // default to satisfy AC 1.1.1 without this being a full selection.
-      setSelectedRouteId(null);
+      setSelectedRouteId(null); // nothing selected until the user picks a card
 
+      // no routes / no live data -> tell the user why the list looks the way it does
       if (fetchedRoutes.length === 0) {
         setBanner({ variant: "warning", text: "No routes available for these locations." });
       } else if (fetchedRoutes.every((route) => route.dataState === "unavailable")) {
         setBanner({ variant: "warning", text: "Live sensory data unavailable." });
       }
     } catch (error) {
+      // request failed - clear any previous results and show why
       setRoutes([]);
       setRecommendedRouteId(null);
       setFastestRouteId(null);
@@ -81,15 +75,10 @@ export default function HomePage({ onFindQuietSpace }) {
   const fastestRoute = routes.find((route) => route.routeId === fastestRouteId) || null;
   const statusIds = { recommendedRouteId, fastestRouteId, quieterAlternativeRouteId };
 
-  // AC 1.2.1: "if live pedestrian data is unavailable... display the banner
-  // 'Live sensory data unavailable.'" for the route currently being viewed.
-  // Suppressed when the search-level banner above is already showing the
-  // identical message (every route lacks data) to avoid a visible duplicate.
+  // per-route banner - suppressed when the search-level banner already shows this same message
   const liveDataUnavailable =
     selectedRoute?.dataState === "unavailable" && banner?.text !== "Live sensory data unavailable.";
-  // AC 1.2.3: the recommended route has high-crowd exposure but no qualifying
-  // quieter alternative was found (too slow, or none exists) — the "no live
-  // data" case is already covered by the banner above, so don't double up.
+  // recommended route is busy but no calmer option was found within the time budget
   const showNoQuieterAlternativeNote =
     !liveDataUnavailable &&
     !quieterAlternativeRouteId &&
@@ -113,6 +102,7 @@ export default function HomePage({ onFindQuietSpace }) {
       </div>
 
       <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
+        {/* left column: search form, banners, route cards */}
         <div className="flex w-full flex-col gap-5 lg:w-[540px] lg:shrink-0">
           <SearchBar
             hasMapsKey={hasMapsKey}
@@ -152,6 +142,7 @@ export default function HomePage({ onFindQuietSpace }) {
           )}
         </div>
 
+        {/* right column: map + selected-route summary */}
         {routes.length > 0 && (
           <div className="flex w-full flex-col gap-5">
             <h2 className="text-xl font-semibold text-primary">Congestion Map</h2>

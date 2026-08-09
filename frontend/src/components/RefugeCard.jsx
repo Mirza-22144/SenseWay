@@ -1,10 +1,6 @@
 import { formatDistance, formatDuration } from "../utils/format";
 import { refugeIcon, refugeTypeLabel } from "../utils/refuge";
 
-// AC 2.1.1 developer steps: name, type, walking time, sensory attribute
-// summary. Hours/attributes fall back to the AC 2.1.2 exception text when the
-// API has nothing to report (attributes is [] whenever we can't justify a tag
-// from the data — see backend/src/services/refuge.service.js deriveAttributes).
 export default function RefugeCard({ refuge, isNearest, isSelected, onSelect, onViewDetails }) {
   const attributes = refuge.attributes || [];
 

@@ -1,14 +1,8 @@
 import { formatDistance, formatDuration } from "../utils/format";
 
-// AC 1.2.2: congestion exposure summary. Matches the Figma left-column
-// "Route Summary" card (node 28:986) — TOTAL DISTANCE / WALKING TIME /
-// HIGH-CROWD AREA. Figma shows a bare distance value for the happy path; the
-// AC's exception sentences are used verbatim when there's nothing to measure.
 export default function CongestionSummary({ route }) {
   if (!route) return null;
 
-  // AC 1.2.2 dev step example: "220m through high-crowd areas" — a plain-
-  // language sentence, not a bare distance value.
   let highCrowdValue = `${formatDistance(route.highCrowdDistanceMetres)} through high-crowd areas`;
   let highCrowdIsSentence = true;
 

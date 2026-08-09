@@ -14,10 +14,6 @@ function statusBadge(route, ids) {
   return { text, className: BADGE_CLASS[text] };
 }
 
-// AC 1.1.1 (colour-coded route options) + AC 1.1.3 (select an alternative
-// route, via the "View Route" button) + AC 1.2.3 (quieter-alternative
-// labeling). Matches the Figma "Route Card" component structure: status
-// badge, title, sensory chip + reason, 3-column metrics, full-width button.
 export default function RouteCard({
   route,
   isSelected,
@@ -44,6 +40,7 @@ export default function RouteCard({
         <p className="text-lg font-semibold text-primary">{route.summary}</p>
       </div>
 
+      {/* quieter-alternative trade-off: extra time vs. high-crowd distance avoided */}
       {route.routeId === quieterAlternativeRouteId && !dataUnavailable && (
         <p className="text-xs font-medium text-success-ink">
           {formatSignedMinutes(route.minutesSlowerThanRecommended)} · avoids{" "}
@@ -51,6 +48,7 @@ export default function RouteCard({
         </p>
       )}
 
+      {/* sensory chip + reason, or a plain "unavailable" pill if there's no live data */}
       {dataUnavailable ? (
         <button
           type="button"
@@ -88,6 +86,7 @@ export default function RouteCard({
         </div>
       </div>
 
+      {/* selects the route on first click, opens navigation once already selected */}
       <button
         type="button"
         onClick={() => (isSelected ? onGetNavigation(route) : onSelect(route.routeId))}

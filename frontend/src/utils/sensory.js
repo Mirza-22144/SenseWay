@@ -1,7 +1,4 @@
-// Single source of truth for how each sensory rating is represented in the UI
-// (chips, map legend, map polylines). Vocabulary matches the backend exactly:
-// Low / Moderate / High / Unknown (see backend/src/services/scoring.service.js).
-// Values match the Figma design tokens (Senseway - IE).
+// Rating -> UI representation (chips, map legend, map polylines).
 export const SENSORY_META = Object.freeze({
   Low: {
     label: "Low",

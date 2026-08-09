@@ -1,13 +1,8 @@
 import { sensoryMeta } from "../utils/sensory";
 
-// Colour-coded Low/Moderate/High/Unknown chip (AC 1.1.1), matching the Figma
-// "chip/{rating} sensory" component. When `onClick` is given it doubles as the
-// trigger for the sensory details modal (AC 1.1.2) — callers must
-// stopPropagation so it doesn't also trigger route selection.
-//
-// `variant="chip"` (default) renders the pill used on route cards.
-// `variant="text"` renders bare colored text with no background, used in the
-// sensory details modal header.
+// variant="chip" (default): pill used on route cards. variant="text": bare
+// colored text, used in the details modal header. When onClick is given,
+// callers must stopPropagation so it doesn't also trigger route selection.
 export default function SensoryBadge({ rating, onClick, showSuffix = false, variant = "chip", label = "Sensory rating" }) {
   const meta = sensoryMeta(rating);
   const text = showSuffix ? `${meta.label} sensory` : meta.label;

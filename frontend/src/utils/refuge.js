@@ -1,7 +1,4 @@
-// AC 2.1.2 exception: "If the refuge photo is unavailable, display a default
-// icon based on refuge type." photoUrl is always null, so this is always the
-// path taken — map the backend's refugeType (backend/src/services/refuge.service.js
-// deriveRefugeType) to an emoji.
+// Default icon by refuge type (photoUrl is always null - no photos in the data).
 const TYPE_ICONS = {
   Library: "📚",
   Park: "🌳",
@@ -16,8 +13,6 @@ export function refugeIcon(refuge) {
   return TYPE_ICONS[refuge.refugeType] || "📍";
 }
 
-// refugeType is already the user-facing label (AC 2.1.1's own example: "Park,
-// Library, Quiet cafe, etc."); no need to re-derive it client-side.
 export function refugeTypeLabel(refuge) {
   return refuge.refugeType || "Public space";
 }

@@ -13,9 +13,6 @@ import { useGoogleMapsLoader } from "../hooks/useGoogleMapsLoader";
 import { fetchNearbyRefuges } from "../services/refugesApi";
 import { fetchRoutes, ApiRequestError } from "../services/routesApi";
 
-// User Story 2.1 (Sensory Refuge Location Finder): AC 2.1.1 search/list/map,
-// AC 2.1.2 details modal, AC 2.1.3 directions sub-view. Layout matches the
-// Figma "Find Nearby Quiet Refuge Spaces" frame (node 40:216).
 export default function RefugeFinderPage() {
   const { hasMapsKey, isLoaded, loadError } = useGoogleMapsLoader();
 
@@ -29,13 +26,14 @@ export default function RefugeFinderPage() {
   const [hasSearched, setHasSearched] = useState(false);
   const [modalRefuge, setModalRefuge] = useState(null);
 
-  // Directions sub-view (AC 2.1.3)
+  // Directions sub-view
   const [mode, setMode] = useState("search"); // "search" | "directions"
-  const [directions, setDirections] = useState(null); // { routes, recommendedRouteId, fastestRouteId, quieterAlternativeRouteId, selectedRouteId, destinationRefuge }
+  const [directions, setDirections] = useState(null);
   const [directionsLoading, setDirectionsLoading] = useState(false);
   const [navigationRoute, setNavigationRoute] = useState(null);
   const [modalRoute, setModalRoute] = useState(null);
 
+  // searches for refuges near origin, stores results
   async function handleFindRefuges() {
     if (!origin) return;
     setLoading(true);
@@ -62,14 +60,12 @@ export default function RefugeFinderPage() {
     }
   }
 
+  // fetches a route to the refuge and switches into the directions sub-view
   async function handleGetDirections(refuge) {
     setDirectionsLoading(true);
     setBanner(null);
 
-    // AC 2.1.3: "If the refuge is inside a larger complex, display the pin at
-    // the accessible entrance" — accessibleEntrance is always null today (no
-    // such data exists yet), so this falls back to the refuge's own
-    // coordinates, but will route to the entrance once that field is populated.
+    // accessibleEntrance is always null today - falls back to refuge coords.
     const destinationPoint = refuge.accessibleEntrance || { latitude: refuge.latitude, longitude: refuge.longitude };
 
     try {
@@ -90,10 +86,7 @@ export default function RefugeFinderPage() {
         recommendedRouteId: data.recommendedRouteId,
         fastestRouteId: data.fastestRouteId || null,
         quieterAlternativeRouteId: data.quieterAlternativeRouteId || null,
-        // Nothing "selected" yet — see MapView's recommendedRouteId prop for
-        // how AC 2.1.3's "highlight the recommended path" is still satisfied
-        // without this being a full selection.
-        selectedRouteId: null,
+        selectedRouteId: null, // nothing selected until the user picks a card
         destinationRefuge: refuge,
         destinationPoint,
       });
@@ -110,10 +103,12 @@ export default function RefugeFinderPage() {
     }
   }
 
+  // updates just the selected route inside the directions state
   function handleSelectDirectionsRoute(routeId) {
     setDirections((prev) => (prev ? { ...prev, selectedRouteId: routeId } : prev));
   }
 
+  // leaves the directions sub-view, back to the refuge's details modal
   function handleBack() {
     setMode("search");
     setBanner(null);
@@ -128,13 +123,9 @@ export default function RefugeFinderPage() {
   const directionsFastestRoute =
     directions?.routes.find((route) => route.routeId === directions.fastestRouteId) || null;
 
-  // AC 1.2.1: banner for the route currently being viewed, not just the
-  // overall search outcome. Suppressed when the search-level banner above is
-  // already showing the identical message, to avoid a visible duplicate.
+  // Suppressed when the search-level banner already shows this same message.
   const directionsLiveDataUnavailable =
     directionsRoute?.dataState === "unavailable" && banner?.text !== "Live sensory data unavailable.";
-  // AC 1.2.3: recommended route has high-crowd exposure but no qualifying
-  // quieter alternative was found.
   const directionsShowNoQuieterAlternativeNote =
     Boolean(directions) &&
     !directionsLiveDataUnavailable &&
@@ -142,6 +133,7 @@ export default function RefugeFinderPage() {
     Boolean(directionsFastestRoute) &&
     directionsFastestRoute.highCrowdDistanceMetres > 0;
 
+  // directions sub-view: same route-picking UI as HomePage, scoped to one refuge
   if (mode === "directions" && directions) {
     return (
       <div className="mx-auto flex max-w-[1440px] flex-col gap-8 px-16 py-8">
@@ -159,6 +151,7 @@ export default function RefugeFinderPage() {
 
         {directions.routes.length > 0 && (
           <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
+            {/* left column: route cards */}
             <div className="flex w-full flex-col gap-5 lg:w-[540px] lg:shrink-0">
               <p className="text-sm font-medium text-muted">ROUTE OPTIONS</p>
               {!directionsRoute && (
@@ -182,6 +175,7 @@ export default function RefugeFinderPage() {
               />
             </div>
 
+            {/* right column: map + selected-route summary */}
             <div className="flex w-full flex-col gap-5">
               <h2 className="text-xl font-semibold text-primary">Route Map</h2>
               <MapView
@@ -210,6 +204,7 @@ export default function RefugeFinderPage() {
     );
   }
 
+  // search view: origin form + refuge list/map
   return (
     <div className="mx-auto flex max-w-[1440px] flex-col gap-8 px-16 py-8">
       <div className="flex flex-col gap-2">
@@ -220,6 +215,7 @@ export default function RefugeFinderPage() {
       </div>
 
       <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
+        {/* left column: search form + refuge cards */}
         <div className="flex w-full flex-col gap-5 lg:w-[540px] lg:shrink-0">
           <RefugeSearchBar
             hasMapsKey={hasMapsKey}
@@ -253,6 +249,7 @@ export default function RefugeFinderPage() {
           )}
         </div>
 
+        {/* right column: map */}
         {visibleRefuges.length > 0 && (
           <div className="flex w-full flex-col gap-5">
             <h2 className="text-xl font-semibold text-primary">Refuge Map</h2>

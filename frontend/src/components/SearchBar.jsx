@@ -2,8 +2,6 @@ import { useRef, useState } from "react";
 import LocationField from "./LocationField";
 import { isWithinMelbourne } from "../constants/melbourne";
 
-// AC 1.1.1: start/destination search + Find Route button. Matches the Figma
-// "Search" card (node 71:1018): fields stacked vertically inside a white card.
 export default function SearchBar({
   hasMapsKey,
   isLoaded,
@@ -18,6 +16,7 @@ export default function SearchBar({
   const startFieldRef = useRef(null);
   const destinationFieldRef = useRef(null);
 
+  // reads browser geolocation and sets it as the start point if within Melbourne
   function useCurrentLocation() {
     if (!navigator.geolocation) {
       setGeoError("Location services aren't available in this browser. Please choose a start point manually.");
@@ -41,10 +40,8 @@ export default function SearchBar({
     );
   }
 
+  // validates both fields first; only calls onFindRoute if both are OK
   function handleFindRouteClick() {
-    // AC: on a missing/invalid field, prompt for it and don't generate a
-    // route - run both so the user sees every problem at once, not one at a
-    // time across repeated clicks.
     const startError = startFieldRef.current?.validate();
     const destinationError = destinationFieldRef.current?.validate();
     if (startError || destinationError) return;

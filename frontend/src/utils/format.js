@@ -9,7 +9,7 @@ export function formatDuration(minutes) {
   return `${Math.round(minutes)} min`;
 }
 
-// AC 1.2.3: "+4 min" trade-off phrasing for a quieter alternative's extra time.
+// "+4 min" trade-off phrasing for a quieter alternative's extra time.
 export function formatSignedMinutes(minutes) {
   if (typeof minutes !== "number" || !Number.isFinite(minutes)) return "—";
   const rounded = Math.round(minutes);

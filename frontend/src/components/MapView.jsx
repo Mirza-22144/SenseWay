@@ -10,9 +10,8 @@ const MAP_CONTAINER_STYLE = {
 };
 const DEFAULT_CENTER = { lat: -37.8136, lng: 144.9631 };
 
-// Standard Google Maps dashed-line recipe: hide the solid stroke, repeat a
-// short line symbol along the path instead. Used for AC 1.2.1's "no live
-// data" segments.
+// Dashed-line recipe for "no live data" segments: hide the solid stroke,
+// repeat a short line symbol along the path instead.
 const NO_DATA_ICONS = [
   {
     icon: { path: "M 0,-1 0,1", strokeOpacity: 1, scale: 3 },
@@ -21,6 +20,7 @@ const NO_DATA_ICONS = [
   },
 ];
 
+// full route outline: every segment's endpoints, in order
 function routeToPath(route) {
   const segments = route.segments || [];
   if (segments.length === 0) return [];
@@ -31,6 +31,7 @@ function routeToPath(route) {
   return path;
 }
 
+// one segment's two endpoints
 function segmentPath(segment) {
   return [
     { lat: segment.fromLatitude, lng: segment.fromLongitude },
@@ -38,24 +39,13 @@ function segmentPath(segment) {
   ];
 }
 
-// AC 1.1.1 (recommended route highlighted, thicker line, WITHOUT requiring
-// the user to select anything first) + AC 1.1.3 (selecting an alternative
-// re-highlights it) + AC 1.2.1 (the selected route is shaded segment-by-
-// segment by pedestrian density, with a legend). Nothing selected: every
-// route shown, colour-coded by band, recommended one thicker. Once the user
-// selects a route, ONLY that one is shown - picking a different route
-// replaces it entirely, and a new search erases everything from the old one.
+// Nothing selected: every route shown, colour-coded, recommended one
+// thicker. Once a route is selected, only that one is shown.
 //
-// Polylines are drawn IMPERATIVELY here (not via @react-google-maps/api's
-// <Polyline> component) because that component does not reliably tear down
-// the underlying google.maps.Polyline overlay when its key/props change -
-// confirmed by testing: a stale route stayed visibly drawn on the map even
-// after route cards had already moved on to new data, across several
-// remount/key/onUnmount-based fixes that should have worked per the
-// library's own docs (see https://github.com/JustFly1984/react-google-maps-api/issues/3374).
-// Managing the google.maps.Polyline objects directly - explicitly clearing
-// every previous one before drawing new ones - is the only approach that
-// reliably avoids this.
+// Polylines are drawn imperatively (not via @react-google-maps/api's
+// <Polyline>) because that component doesn't reliably tear down its
+// underlying overlay on prop changes - see
+// https://github.com/JustFly1984/react-google-maps-api/issues/3374.
 export default function MapView({
   hasMapsKey,
   isLoaded,
@@ -81,6 +71,7 @@ export default function MapView({
     const drawn = [];
 
     if (!selectedRouteId) {
+      // no selection: draw every route, colour-coded, recommended one thicker
       for (const route of routes) {
         const isRecommended = route.routeId === recommendedRouteId;
         drawn.push(
@@ -95,6 +86,8 @@ export default function MapView({
         );
       }
     } else if (selectedRoute) {
+      // one route selected: draw it segment by segment so each can be
+      // shaded by its own sensory rating (or dashed if it has no live data)
       for (const segment of selectedRoute.segments || []) {
         drawn.push(
           new window.google.maps.Polyline({

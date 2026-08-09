@@ -5,9 +5,6 @@ const VARIANT_CLASSES = {
   brand: "bg-brand-subtle text-secondary border-brand",
 };
 
-// `brand` matches the Figma "Alert Banner" component (node 28:1001): an
-// icon dot + copy, used as a static informational note above the congestion
-// map. Other variants are simple colored boxes for exception-driven messages.
 export default function Banner({ variant = "info", children }) {
   if (!children) return null;
 

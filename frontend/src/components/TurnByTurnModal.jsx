@@ -1,11 +1,10 @@
 import { useEffect } from "react";
 import { formatDistance, formatDuration } from "../utils/format";
 
-// "Get Navigation": ordered turn-by-turn walking directions for the
-// currently-selected route. steps[] comes straight from the backend (real
-// Google Routes API data in live mode, fixed fixtures in mock mode) — never
-// fabricated here.
+// "Get Navigation": turn-by-turn walking directions for the selected route.
+// steps[] comes straight from the backend, never fabricated here.
 export default function TurnByTurnModal({ route, onClose }) {
+  // close on Escape while the modal is open
   useEffect(() => {
     if (!route) return undefined;
     function onKeyDown(event) {

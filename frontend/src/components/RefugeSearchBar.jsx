@@ -5,8 +5,6 @@ import { isWithinMelbourne } from "../constants/melbourne";
 const RADIUS_OPTIONS = [5, 10, 15, 20];
 const SELECT_CLASS = "h-12 w-full rounded-lg border border-line bg-base px-4 py-3 text-sm text-primary";
 
-// AC 2.1.1: origin + Refuge Type + Radius filters + Find Refuges button.
-// Matches the Figma "Search" card (node 40:236).
 export default function RefugeSearchBar({
   hasMapsKey,
   isLoaded,
@@ -21,6 +19,7 @@ export default function RefugeSearchBar({
 }) {
   const [geoError, setGeoError] = useState(null);
 
+  // reads browser geolocation and sets it as the origin if within Melbourne
   function useCurrentLocation() {
     if (!navigator.geolocation) {
       setGeoError("Location services aren't available in this browser. Please choose a location manually.");

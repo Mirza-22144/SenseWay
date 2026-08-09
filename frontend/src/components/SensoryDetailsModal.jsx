@@ -13,11 +13,8 @@ function densitySentence(route) {
   return "Live pedestrian density data contributes to this rating.";
 }
 
-// AC 1.1.2: sensory rating, contributing data, and last-updated time for a
-// route, opened from a route card's sensory chip. Structure matches the Figma
-// "Sensory Details Modal" (node 44:1983): labeled SENSORY RATING / REASON /
-// CONTRIBUTING PEDESTRIAN DENSITY / LAST UPDATED sections.
 export default function SensoryDetailsModal({ route, onClose }) {
+  // close on Escape while the modal is open
   useEffect(() => {
     if (!route) return undefined;
     function onKeyDown(event) {
