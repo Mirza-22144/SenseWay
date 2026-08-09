@@ -5,7 +5,7 @@ const pedestrian = require("./pedestrian.service");
 const refuge = require("./refuge.service");
 const scoring = require("./scoring.service");
 const metrics = require("./routeMetrics");
-const { countToCrowdScore } = require("../utils/crowd");
+const { countToCrowdScore, minuteCountToHourlyRate } = require("../utils/crowd");
 const { haversineMetres } = require("../utils/geo");
 
 /**
@@ -345,11 +345,14 @@ async function scoreLiveCandidate(candidate, now) {
 
     if (covered) {
       const latest = await pedestrian.latestCount(sensor.sensorId);
-      crowdScore = countToCrowdScore(latest.count);
+      // latest.count is a PEDESTRIAN_MINUTE_COUNT reading - normalise to an
+      // hourly rate before scoring (countToCrowdScore expects hourly scale).
+      const hourlyRate = minuteCountToHourlyRate(latest.count);
+      crowdScore = countToCrowdScore(hourlyRate);
       hasLiveData = typeof crowdScore === "number";
       if (hasLiveData) {
         pedestrianSource = "live";
-        counts.push(latest.count);
+        counts.push(hourlyRate);
         if (latest.observedAt) {
           if (!oldestObservedAt || latest.observedAt < oldestObservedAt) {
             oldestObservedAt = latest.observedAt;
