@@ -6,22 +6,13 @@ const metrics = require("./routeMetrics");
 const { haversineMetres } = require("../utils/geo");
 const { congestionPointId } = require("../utils/ids");
 
-/**
- * Dynamic peak-hour rerouting (US1.3).
- *
- * Given where the user is right now, their destination and their active route,
- * decide whether there's a congestion point AHEAD worth warning about and, if
- * so, offer a calmer alternative.
- *
- * Two acceptance criteria shape the logic:
- *  - AC2 (dismissals must stick): we cannot store dismissals because the MVP is
- *    accountless, so we return a STABLE congestionPointId derived purely from
- *    the point's coordinates. The frontend remembers which ids the user
- *    dismissed and filters them out. Same point -> same id, every time.
- *  - AC3 (no already-passed points): a congestion point is only "ahead" if it is
- *    closer to the destination than the user currently is. Points the user has
- *    already walked past are dropped.
- */
+// Dynamic peak-hour rerouting: given the user's current location, destination
+// and active route, decides whether there's a congestion point ahead worth
+// warning about and offers a calmer alternative if so.
+//
+// congestionPointId is derived purely from coordinates (not stored - the MVP
+// is accountless) so dismissals stay stable: same point -> same id always,
+// and the frontend filters out ids the user already dismissed.
 
 async function evaluate(request) {
   const { currentLocation, destination, activeRouteId, preferences } = request;
@@ -31,16 +22,13 @@ async function evaluate(request) {
     currentLocation,
     destination
   );
-  // Candidates arrive unscored (segments: null, congestionPoints: []) - score
-  // them against live pedestrian data first, exactly like route.service.js's
-  // recommend(), or congestionPoints would always be empty here.
+  // candidates arrive unscored - score them first or congestionPoints stays empty
   await routeService.scoreCandidates(candidates, new Date());
 
   const activeRoute =
     candidates.find((c) => c.routeId === activeRouteId) || candidates[0] || null;
 
-  // Distance from the user to the destination now. Anything closer to the
-  // destination than this is "ahead"; anything farther has been passed.
+  // anything closer to the destination than this is "ahead"; farther = already passed
   const userToDest = haversineMetres(
     currentLocation.latitude,
     currentLocation.longitude,
@@ -67,8 +55,7 @@ async function evaluate(request) {
         )
       ),
     }))
-    // AC3: keep only points still in front of the user.
-    .filter((x) => x.cpToDest < userToDest)
+    .filter((x) => x.cpToDest < userToDest) // only points still in front of the user
     .sort((a, b) => a.metresAhead - b.metresAhead);
 
   if (pointsAhead.length === 0) {
@@ -98,7 +85,7 @@ async function evaluate(request) {
   };
 }
 
-// The calmest candidate that isn't the one the user is already on.
+// calmest candidate that isn't the one the user is already on
 function buildAlternative(candidates, activeRouteId, threshold) {
   const now = new Date();
   const assembled = candidates

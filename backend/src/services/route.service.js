@@ -8,25 +8,15 @@ const metrics = require("./routeMetrics");
 const { countToCrowdScore, minuteCountToHourlyRate } = require("../utils/crowd");
 const { haversineMetres } = require("../utils/geo");
 
-/**
- * Orchestrates one route recommendation (US1.1 / US1.2).
- *
- * The calmest-first ordering is the ENTIRE product, so it lives here, applied
- * identically to mock and live candidates. This service composes the
- * google/pedestrian/refuge services, the pure scoring service, and the pure
- * routeMetrics helpers - it does not talk to the DB or Google directly.
- *
- * Every per-route state the frontend keys an AC message off (dataState,
- * sensorCoverage, the four distance buckets, ratingReason, the quieter
- * alternative) is computed here so the frontend never has to guess which
- * exception message applies.
- */
+// Orchestrates one route recommendation: composes the google/pedestrian/
+// refuge services + the pure scoring/routeMetrics helpers. Every per-route
+// field the frontend needs to pick its message (dataState, sensorCoverage,
+// distance buckets, ratingReason, quieter alternative) is computed here.
 
-// How many walking minutes of refuges to attach near the start point.
+// walking minutes of refuges to attach near the start point
 const REFUGE_LOOKUP_MINUTES = 5;
 
-// A segment at/above this score is a "congestion point" worth surfacing,
-// independent of the user's personal avoidance threshold.
+// score at/above this is a "congestion point", independent of the user's own threshold
 const CONGESTION_POINT_SCORE = 71;
 
 async function recommend(request) {
@@ -34,20 +24,19 @@ async function recommend(request) {
   const threshold = preferences.crowdThreshold;
   const now = new Date();
 
-  // 1. Candidate geometry from Google. Empty => no routes exist.
+  // 1. candidate geometry from Google - empty means no routes exist
   const { candidates, source: googleSource } = await google.getCandidateRoutes(
     start,
     destination
   );
 
-  // 2. Score every candidate's segments against live pedestrian data.
+  // 2. score every candidate's segments against live pedestrian data
   const pedestrianSource = await scoreCandidates(candidates, now);
 
-  // 3. Assemble full route objects (no cross-route fields yet).
+  // 3. assemble full route objects (no cross-route fields yet)
   const assembled = candidates.map((c) => assembleBase(c, { threshold, now }));
 
-  // 4. Rank calmest-first, pick a spread across Low/Moderate/High, and
-  //    compute cross-route fields.
+  // 4. rank calmest-first, pick a Low/Moderate/High spread, add cross-route fields
   const finalized = finalizeRoutes(assembled, {
     maxLowRoutes: metrics.MAX_LOW_ROUTES,
     maxModerateRoutes: metrics.MAX_MODERATE_ROUTES,
@@ -56,14 +45,10 @@ async function recommend(request) {
   });
   const routes = finalized.routes;
 
-  // 5. AC 1.1.1 / 2.1.3: no routes is a normal outcome, not a 500. We return
-  //    200 with an empty routes array and an explicit flag; the frontend picks
-  //    "No routes available for these locations." or "Unable to generate
-  //    directions to this refuge." from context.
+  // 5. no routes is a normal 200 outcome, not a 500 - frontend picks the message
   const noRoutesAvailable = routes.length === 0;
 
-  // 6. noLowSensoryRouteAvailable (US1.2 AC2): true when EVERY route has at
-  //    least one covered segment over the user's threshold.
+  // 6. true when EVERY route has at least one covered segment over the user's threshold
   const noLowSensoryRouteAvailable =
     routes.length > 0 &&
     routes.every((r) => r.segments.some((s) => s.exceedsThreshold));
@@ -73,11 +58,8 @@ async function recommend(request) {
       "We've recommended the calmest of them, but none avoids high density entirely."
     : null;
 
-  // 7. Refuge spaces near the start. This is a secondary enrichment of the
-  // route response, not this endpoint's own AC - a refuge-pipeline outage
-  // (refuge.findNearby throws ApiError.upstream() for AC 2.1.1's own
-  // endpoint) must not fail route recommendations, which have nothing to do
-  // with the pipeline. Degrade to no suggested refuges instead.
+  // 7. refuge suggestions near the start - a pipeline outage here must not
+  // fail the route response, so degrade to no suggestions instead
   let refugeSpaces = [];
   try {
     const refugeResult = await refuge.findNearby(
@@ -106,17 +88,13 @@ async function recommend(request) {
   };
 }
 
-/**
- * Turn a raw candidate (with scored, coverage-aware segments) into a full route
- * object, minus the cross-route trade-off fields (added in finalizeRoutes).
- * Exported so the reroute service can reuse the exact same shape.
- */
+// turns a scored candidate into a full route object (minus cross-route
+// fields, added in finalizeRoutes) - exported for the reroute service too
 function assembleBase(candidate, { threshold, now }) {
   const rawSegments = candidate.segments || [];
   const dataUpdatedAt = candidate.dataUpdatedAt || now.toISOString();
 
-  // Covered segments only feed the route score - we never average in a segment
-  // we couldn't measure.
+  // only covered segments feed the route score - never average in an unmeasured one
   const covered = rawSegments.filter(
     (s) => s.hasLiveData && typeof s.crowdScore === "number"
   );
@@ -140,7 +118,7 @@ function assembleBase(candidate, { threshold, now }) {
     toLatitude: s.toLatitude,
     toLongitude: s.toLongitude,
     lengthMetres: Math.round(s.lengthMetres || 0),
-    // Uncovered segments carry NO crowd score and are Unknown / neutral-grey.
+    // uncovered segments carry no crowd score - Unknown/neutral-grey
     hasLiveData: Boolean(s.hasLiveData),
     crowdScore: s.hasLiveData && typeof s.crowdScore === "number" ? s.crowdScore : null,
     sensoryRating: metrics.segmentRating(s),
@@ -155,13 +133,11 @@ function assembleBase(candidate, { threshold, now }) {
     sensoryRating,
   });
 
-  // "high" only when we have a fresh, known rating; "low" otherwise. dataState
-  // is the richer signal, but confidence is kept for backward compatibility.
+  // "high" only for a fresh, known rating; dataState is the richer signal
   const confidence =
     crowdScore != null && dataState === "live" ? "high" : "low";
 
-  // bypassedAreas are only the high-density areas actually above the user's
-  // threshold.
+  // only the high-density areas actually above the user's threshold
   const bypassedAreas = (candidate.bypassedAreas || []).filter(
     (a) => typeof a.crowdScore === "number" && a.crowdScore > threshold
   );
@@ -183,7 +159,7 @@ function assembleBase(candidate, { threshold, now }) {
     sensorCoverage,
     confidence,
     dataUpdatedAt,
-    // Four-state distance breakdown (AC 1.2.1 legend / AC 1.2.2 summary).
+    // four-state distance breakdown for the map legend / route summary
     highCrowdDistanceMetres: buckets.highCrowdDistanceMetres,
     moderateCrowdDistanceMetres: buckets.moderateCrowdDistanceMetres,
     lowCrowdDistanceMetres: buckets.lowCrowdDistanceMetres,
@@ -201,24 +177,14 @@ function assembleBase(candidate, { threshold, now }) {
     },
     segments,
     bypassedAreas,
-    // Turn-by-turn walking directions ("Get Navigation"), from the Google
-    // Routes API in live mode or mock fixtures otherwise.
-    steps: candidate.steps || [],
+    steps: candidate.steps || [], // turn-by-turn ("Get Navigation"), from the Google Routes API
     alerts: [],
   };
 }
 
-/**
- * Rank calmest-first, then pick a genuine spread across risk bands (up to
- * maxLowRoutes calmest Low routes, plus the calmest available Moderate route,
- * plus the calmest available High route) rather than just the overall
- * calmest handful - so a user can always compare "safe" against "fast but
- * crowded" instead of seeing three near-identical calm options. Falls back to
- * a plain calmest-first cap when no candidate has a scored band at all (e.g.
- * live data unavailable for everything). Then computes the cross-route
- * trade-off fields and the quieter alternative. Shared by recommend() and
- * reroute.
- */
+// ranks calmest-first, then picks a genuine Low/Moderate/High spread (not
+// just the overall calmest handful), computes cross-route trade-off fields
+// and the quieter alternative. Shared by recommend() and reroute.
 function finalizeRoutes(routeObjs, { maxLowRoutes, maxModerateRoutes, maxHighRoutes, maxExtraMinutes }) {
   const sorted = routeObjs.slice().sort(byCalmestThenFastest);
 
@@ -242,9 +208,7 @@ function finalizeRoutes(routeObjs, { maxLowRoutes, maxModerateRoutes, maxHighRou
     ...byBand.High.slice(0, maxHighRoutes),
   ].sort(byCalmestThenFastest);
 
-  // Nothing had a scored band (e.g. every candidate is Unknown because live
-  // data is unavailable) - fall back to the plain calmest-first cap so we
-  // still show routes rather than an empty list.
+  // nothing had a scored band (e.g. all Unknown) - fall back to a plain calmest-first cap
   if (routes.length === 0) {
     routes = sorted.slice(0, maxLowRoutes + maxModerateRoutes + maxHighRoutes);
   }
@@ -279,8 +243,7 @@ function finalizeRoutes(routeObjs, { maxLowRoutes, maxModerateRoutes, maxHighRou
   };
 }
 
-// Calmest first (lower crowdScore wins); a null score sorts last; ties broken by
-// shorter duration.
+// lower crowdScore wins, null sorts last, ties broken by shorter duration
 function byCalmestThenFastest(a, b) {
   const sa = a.crowdScore == null ? Infinity : a.crowdScore;
   const sb = b.crowdScore == null ? Infinity : b.crowdScore;
@@ -288,17 +251,11 @@ function byCalmestThenFastest(a, b) {
   return (a.durationMinutes || Infinity) - (b.durationMinutes || Infinity);
 }
 
-/**
- * Score every candidate's segments against live pedestrian data, in place.
- * Shared by recommend() and the reroute service, so a candidate is scored
- * identically (and exactly once) no matter which endpoint asked for it.
- */
+// scores every candidate's segments against live pedestrian data, in place.
+// Shared by recommend() and reroute so a candidate is scored identically once.
 async function scoreCandidates(candidates, now) {
-  // Every candidate's segment scoring is independent of every other
-  // candidate's - score them all at once instead of one route at a time. The
-  // pg pool (max: 5, see config/database.js) naturally caps how many DB
-  // queries actually run at once, so this just removes an artificial
-  // serialisation, not a real concurrency risk.
+  // independent per candidate, so score them all at once - pg pool (max: 5,
+  // see config/database.js) naturally caps real concurrency
   const enrichedCandidates = await Promise.all(
     candidates.map((c) => {
       if (!c.dataUpdatedAt) c.dataUpdatedAt = now.toISOString();
@@ -314,16 +271,9 @@ async function scoreCandidates(candidates, now) {
   return pedestrianSource;
 }
 
-/**
- * Score a live Google candidate segment-by-segment from pedestrian data,
- * respecting sensor coverage: a segment with no sensor within
- * COVERAGE_RADIUS_METRES is left UNSCORED (hasLiveData false), never guessed.
- *
- * One segment's lookup has zero dependency on any other segment's, so they're
- * all scored at once (scoreSegment below) instead of one at a time - this is
- * what actually cuts route-search latency, since a route can have up to 5
- * segments x 2 DB queries each.
- */
+// scores a Google candidate segment-by-segment; a segment with no sensor
+// within COVERAGE_RADIUS_METRES is left unscored, never guessed. Segments are
+// independent, so scoreSegment() runs them all concurrently.
 async function scoreLiveCandidate(candidate, now) {
   const points = Array.isArray(candidate.points) ? candidate.points : [];
   const sampled = samplepoints(points, 6);
@@ -386,9 +336,8 @@ async function scoreLiveCandidate(candidate, now) {
   };
 }
 
-// Score one segment: nearest sensor, then (if covered) its latest reading.
-// Self-contained and independent of every other segment's result, which is
-// exactly what lets scoreLiveCandidate run many of these concurrently.
+// nearest sensor, then (if covered) its recent reading - self-contained, no
+// dependency on any other segment
 async function scoreSegment(from, to) {
   const mid = {
     latitude: (from.latitude + to.latitude) / 2,
@@ -396,8 +345,7 @@ async function scoreSegment(from, to) {
   };
   const lengthMetres = haversineMetres(from.latitude, from.longitude, to.latitude, to.longitude);
 
-  // No DB configured, or no sensor found at all, both mean "not covered" -
-  // never invented, exactly like a real sensor that's just too far away.
+  // no DB, or no sensor found - both mean "not covered", never invented
   const sensor = await pedestrian.nearestSensor(mid.latitude, mid.longitude);
   const covered = Boolean(sensor) && sensor.distanceMetres <= metrics.COVERAGE_RADIUS_METRES;
 
@@ -408,10 +356,7 @@ async function scoreSegment(from, to) {
 
   if (covered) {
     const latest = await pedestrian.recentMeanCount(sensor.sensorId);
-    // latest.count is the mean per-minute rate over the recent window
-    // (pedestrian.repository.js's getRecentMeanCount) - normalise to an
-    // hourly rate before scoring (countToCrowdScore expects hourly scale).
-    hourlyRate = minuteCountToHourlyRate(latest.count);
+    hourlyRate = minuteCountToHourlyRate(latest.count); // per-minute rate -> hourly scale
     crowdScore = countToCrowdScore(hourlyRate);
     hasLiveData = typeof crowdScore === "number";
     observedAt = latest.observedAt;
@@ -435,7 +380,7 @@ async function scoreSegment(from, to) {
   };
 }
 
-// Pick up to `max` points roughly evenly along the polyline.
+// up to `max` points, roughly evenly spaced along the polyline
 function samplepoints(points, max) {
   if (points.length <= max) return points;
   const step = (points.length - 1) / (max - 1);
@@ -451,11 +396,11 @@ function mergeSource(a, b) {
   return "partial";
 }
 
-// Route data provenance: geometry (Google) + scoring (pedestrian).
+// route data provenance: geometry (Google) + scoring (pedestrian)
 function resolveDataSource(googleSource, pedestrianSource) {
   if (googleSource === "mock") return "mock";
   if (pedestrianSource === "live") return "live";
-  return "partial"; // live geometry, mock/absent scoring
+  return "partial"; // live geometry, absent scoring
 }
 
 module.exports = {

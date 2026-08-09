@@ -1,27 +1,16 @@
 "use strict";
 
 /**
- * Single source of truth for environment configuration.
+ * Single source of truth for environment configuration - every other module
+ * reads the frozen `env` object here, never process.env directly.
  *
- * WHY this file exists: every other module imports the frozen `env` object from
- * here and NEVER touches process.env directly. That means a misconfigured
- * deployment fails loudly at startup with a clear message, instead of failing
- * three layers deep at 11pm when someone finally hits the code path that reads
- * an undefined variable.
- *
- * WHY absence isn't a hard startup crash: Google/DB/pipeline credentials are
- * all REQUIRED for this app to actually work (there is no mock fallback left
- * anywhere in the services) - but env.js still boots without them rather than
- * throwing, so /api/health stays up and the specific endpoint that needs the
- * missing credential returns an honest 502 UPSTREAM_UNAVAILABLE instead of the
- * whole process refusing to start. We DO throw when a value that *is* present
- * is malformed (e.g. PORT is not a number), because that is a genuine mistake
- * rather than a missing credential.
+ * Missing Google/DB/pipeline credentials don't crash startup: /api/health
+ * stays up, and only the specific endpoint that needs the missing credential
+ * returns 502 UPSTREAM_UNAVAILABLE. A malformed value that IS present (e.g.
+ * PORT not a number) still throws, since that's a real mistake.
  */
 
-// Placeholder values shipped in .env.example. If someone copies .env.example to
-// .env without editing it, we must treat these as "absent" rather than trying
-// to connect with junk and hanging. Compared case-insensitively and trimmed.
+// values shipped in .env.example - treated as "not set" if left unedited
 const PLACEHOLDERS = new Set([
   "",
   "our_password",
@@ -59,9 +48,8 @@ const rawDb = {
   password: process.env.DB_PASSWORD,
 };
 
-// The database is considered "configured" only when every DB_* field is present
-// AND the password is not the shipped placeholder. Otherwise we run on mock
-// pedestrian data. This is what keeps `npm run dev` working with no .env at all.
+// "configured" only when every DB_* field is present and the password isn't
+// the shipped placeholder
 const hasDatabase = Boolean(
   rawDb.host &&
     rawDb.name &&
@@ -75,9 +63,7 @@ const hasGoogleKey = !isPlaceholder(googleKey);
 const pipelineUrl = clean(process.env.PIPELINE_URL);
 const hasPipeline = Boolean(pipelineUrl) && !isPlaceholder(pipelineUrl);
 
-// CORS: NEVER default to "*". A bare allow-all lets any website on the internet
-// make authenticated-by-cookie requests from a victim's browser. Default is the
-// local Vite dev server only; production origins are added via CORS_ORIGINS.
+// never default to "*" - local Vite dev server only, plus whatever CORS_ORIGINS adds
 const DEFAULT_CORS = "http://localhost:5173";
 const corsOrigins = (clean(process.env.CORS_ORIGINS) || DEFAULT_CORS)
   .split(",")
@@ -87,9 +73,7 @@ const corsOrigins = (clean(process.env.CORS_ORIGINS) || DEFAULT_CORS)
 const env = Object.freeze({
   port: requireNumber("PORT", process.env.PORT, 5000),
 
-  // Database. hasDatabase=false means pedestrian data degrades honestly
-  // (segments render as "no live data", never fabricated) - see
-  // pedestrian.service.js. Required for AC 1.2.1/1.1.2 to show real data.
+  // hasDatabase=false -> pedestrian data degrades to "no live data" (never fabricated)
   hasDatabase,
   db: Object.freeze({
     host: rawDb.host || "localhost",
@@ -97,8 +81,7 @@ const env = Object.freeze({
     database: rawDb.name || "senseway",
     user: rawDb.user || "postgres",
     password: isPlaceholder(rawDb.password) ? "" : rawDb.password,
-    // Short timeout so a segment degrades to "no live data" fast rather than
-    // the request hanging for the default 30s.
+    // short timeout so a segment degrades fast instead of the request hanging
     connectionTimeoutMillis: requireNumber(
       "DB_CONNECTION_TIMEOUT_MS",
       process.env.DB_CONNECTION_TIMEOUT_MS,
@@ -106,9 +89,7 @@ const env = Object.freeze({
     ),
   }),
 
-  // Google Routes API. Required: hasGoogleKey=false makes every /api/routes
-  // call throw 502 UPSTREAM_UNAVAILABLE (see google.service.js) - there is no
-  // route-planning feature without it.
+  // hasGoogleKey=false -> every /api/routes call throws 502 UPSTREAM_UNAVAILABLE
   hasGoogleKey,
   googleMapsApiKey: hasGoogleKey ? googleKey : null,
   googleTimeoutMs: requireNumber(
@@ -117,9 +98,7 @@ const env = Object.freeze({
     4000
   ),
 
-  // senseway-data-pipeline refuge endpoint. Required: hasPipeline=false makes
-  // every /api/refuges/nearby call throw 502 UPSTREAM_UNAVAILABLE (AC 2.1.1's
-  // own "Refuge information is currently unavailable." exception).
+  // hasPipeline=false -> every /api/refuges/nearby call throws 502 UPSTREAM_UNAVAILABLE
   hasPipeline,
   pipelineUrl: hasPipeline ? pipelineUrl : null,
   pipelineTimeoutMs: requireNumber(

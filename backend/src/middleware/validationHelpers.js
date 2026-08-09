@@ -6,33 +6,16 @@ const {
   withinMelbourne,
 } = require("../utils/geo");
 
-// AC 1.1.1: an out-of-area location must be distinguishable from other
-// validation failures so the frontend can show its exact wording, "Please enter
-// a valid Melbourne CBD location", rather than a generic message. This is a
-// stable, documented detail string the frontend keys off (see API-CONTRACT.md).
+// stable detail string the frontend keys off to show its own wording (API-CONTRACT.md)
 const OUT_OF_MELBOURNE_DETAIL = (fieldName) =>
   `${fieldName} is outside the Melbourne CBD service area. Please enter a valid Melbourne CBD location.`;
 
-/**
- * Shared validation helpers.
- *
- * WHY we validate on the server even though React validates too: React's
- * validation is a convenience for the user, not a security control. Anyone can
- * bypass the frontend entirely and hit these endpoints with curl. The server is
- * the only place that can actually enforce these rules, so it must - especially
- * the Melbourne bounding box, which is what stops a caller running up our Google
- * bill with arbitrary worldwide coordinates.
- *
- * All helpers PUSH every problem they find into the shared `details` array
- * rather than returning on the first one, so the client gets the full list of
- * what's wrong in a single response.
- */
+// Server-side validation - the frontend's own checks are bypassable via curl,
+// so these are the real enforcement. Every helper pushes ALL problems it
+// finds into `details` rather than stopping at the first one.
 
-/**
- * Validate a { latitude, longitude } pair. Returns a CLEAN object containing
- * only those two known fields (nothing else the client sent survives), or null
- * if the pair is unusable.
- */
+// validates { latitude, longitude }; returns a clean {latitude, longitude}
+// object (nothing else survives) or null if unusable
 function validateCoordinatePair(value, fieldName, details) {
   if (value == null || typeof value !== "object" || Array.isArray(value)) {
     details.push(`${fieldName} is required and must be an object with latitude and longitude.`);
@@ -64,14 +47,10 @@ function validateCoordinatePair(value, fieldName, details) {
     return null;
   }
 
-  // Rebuild a clean object - only the two fields we trust travel onward.
   return { latitude, longitude };
 }
 
-/**
- * Validate an optional ISO-8601 departureTime. Returns a Date. Defaults to now
- * when absent. Pushes a problem and returns null when present-but-unparseable.
- */
+// optional ISO-8601 departureTime -> Date, defaults to now when absent
 function validateDepartureTime(value, fieldName, details) {
   if (value === undefined || value === null) return new Date();
   if (typeof value !== "string") {
@@ -86,9 +65,7 @@ function validateDepartureTime(value, fieldName, details) {
   return d;
 }
 
-/**
- * Validate an optional numeric crowdThreshold (0-100). Defaults to 70.
- */
+// optional numeric crowdThreshold (0-100), defaults to 70
 function validateCrowdThreshold(value, fieldName, details, fallback = 70) {
   if (value === undefined || value === null) return fallback;
   if (!isFiniteNumber(value) || value < 0 || value > 100) {
@@ -98,9 +75,7 @@ function validateCrowdThreshold(value, fieldName, details, fallback = 70) {
   return value;
 }
 
-/**
- * Parse a required numeric query param within [min, max].
- */
+// required numeric query param within [min, max]
 function validateNumberInRange(value, fieldName, details, { min, max, fallback }) {
   if (value === undefined || value === null || value === "") {
     if (fallback !== undefined) return fallback;

@@ -7,11 +7,8 @@ const {
   validateNumberInRange,
 } = require("./validationHelpers");
 
-/**
- * Validate GET /api/forecast query params. departureTime defaults to now; hours
- * defaults to 2 and is capped at 6 (a couple of hours of 15-minute intervals is
- * all the UI slider needs).
- */
+// validates GET /api/forecast query params - departureTime defaults to now,
+// hours defaults to 2 and is capped at 6
 function validateForecastQuery(req, res, next) {
   const details = [];
   const q = req.query || {};

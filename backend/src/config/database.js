@@ -4,20 +4,10 @@ const { Pool } = require("pg");
 const env = require("./env");
 
 /**
- * Lazily-constructed pg Pool.
- *
- * WHY lazy: /api/health must NEVER touch the database (a health check that can
- * fail for someone else's outage is worse than no health check). So we do not
- * open a pool at import time - we build it on first query. pedestrian.service.js
- * checks env.hasDatabase itself before ever calling in here, so query()
- * returning null for "not configured" is a defensive fallback, not the normal
- * path - a genuine query failure rejects and is the caller's job to handle
- * (degrade to "no live data for this spot", never invent a reading).
- *
- * This backend uses the discrete DB_* variables (Part 6 of the brief). The
- * senseway-data-pipeline uses a single DATABASE_URL instead - two services,
- * one database, two conventions. That divergence is intentional and flagged in
- * the README; we do not read DATABASE_URL here.
+ * Lazily-constructed pg Pool - built on first query, not at import time, so
+ * /api/health never touches the database. Note: this backend uses discrete
+ * DB_* env vars; senseway-data-pipeline uses a single DATABASE_URL instead -
+ * two services, one database, two conventions, intentional (see README).
  */
 
 let pool = null;
@@ -26,6 +16,7 @@ function isConfigured() {
   return env.hasDatabase;
 }
 
+// builds the pool on first call, reuses it after
 function getPool() {
   if (!isConfigured()) return null;
   if (pool) return pool;
@@ -40,8 +31,7 @@ function getPool() {
     max: 5,
   });
 
-  // A pool-level error listener prevents an idle client error from crashing the
-  // whole process (the pipeline relies on the same pattern).
+  // prevents an idle-client error from crashing the whole process
   pool.on("error", (err) => {
     console.error("[database] unexpected idle client error:", err.message);
   });
@@ -49,11 +39,7 @@ function getPool() {
   return pool;
 }
 
-/**
- * Run a parameterised query. Returns null when the DB is not configured so the
- * caller can fall back to mock data. Throws only on a genuine query error
- * (which the caller also treats as "fall back to mock", logging a warning).
- */
+// returns null when the DB isn't configured; throws on a genuine query error
 async function query(text, params) {
   const p = getPool();
   if (!p) return null;

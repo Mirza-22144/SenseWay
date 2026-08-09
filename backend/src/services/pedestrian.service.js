@@ -3,18 +3,9 @@
 const env = require("../config/env");
 const repo = require("../repositories/pedestrian.repository");
 
-/**
- * Pedestrian data access, DB-only - no mock fallback.
- *
- * Unlike routes (Google) or refuges (the pipeline), a missing/failed sensor
- * lookup here is NOT treated as an upstream outage: "no live data for this
- * spot" is already a first-class, honest product state (AC 1.2.1's neutral
- * grey / "no live data" segments, AC 1.1.2's "Detailed sensory data
- * unavailable"), not an error. So every function degrades to null/no-data
- * instead of throwing, and the route service treats a null sensor exactly
- * like a real sensor that's simply too far away - never fabricated, never a
- * 502 for the whole route just because one segment lacks coverage.
- */
+// Pedestrian data access, DB-only. Unlike routes/refuges, a missing/failed
+// lookup here is NOT an upstream outage - "no live data" is a normal, honest
+// state, so every function degrades to null instead of throwing.
 
 async function nearestSensor(latitude, longitude) {
   if (!env.hasDatabase) return null;
@@ -27,13 +18,8 @@ async function nearestSensor(latitude, longitude) {
   }
 }
 
-/**
- * Historical mean for (sensor, day-of-week, hour).
- *
- * IMPORTANT (trap 5): we return exactly what the DB gives us, INCLUDING
- * sampleSize 0 - the forecast service turns a 0 sample into an honest
- * "Unknown" rather than a fabricated number.
- */
+// historical mean for (sensor, day-of-week, hour) - sampleSize 0 is returned
+// as-is; forecast.service.js turns that into "Unknown", not a fabricated number
 async function hourlyMean(sensorId, dayOfWeek, hour) {
   if (!sensorId) return { mean: null, sampleSize: 0 };
   try {
@@ -44,13 +30,8 @@ async function hourlyMean(sensorId, dayOfWeek, hour) {
   }
 }
 
-/**
- * Recent mean live count for a sensor, over a short rolling window matching
- * the source data's own refresh cadence (for scoring live routes and
- * freshness - see getRecentMeanCount()'s doc for why a window mean rather
- * than a single reading). Returns { count, observedAt } - both null when
- * there's nothing to report.
- */
+// recent mean live count for a sensor (see repository's getRecentMeanCount
+// for why a window mean, not a single reading)
 async function recentMeanCount(sensorId) {
   if (!sensorId) return { count: null, observedAt: null };
   try {

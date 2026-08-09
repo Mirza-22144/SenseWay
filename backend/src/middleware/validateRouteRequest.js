@@ -8,17 +8,13 @@ const {
   validateCrowdThreshold,
 } = require("./validationHelpers");
 
-/**
- * Validate POST /api/routes. Collects ALL problems, then either throws a single
- * INVALID_REQUEST with the full list or attaches a clean, rebuilt object to
- * req.validated. Nothing the client sent beyond the known fields survives.
- */
+// validates POST /api/routes; collects all problems into one 400, or
+// attaches a clean rebuilt object to req.validated
 function validateRouteRequest(req, res, next) {
   const details = [];
   const body = req.body;
 
-  // A POST with no body leaves req.body undefined in Express 5 (not {}). Guard
-  // so we return a clean 400 rather than throwing on property access.
+  // Express 5 leaves req.body undefined (not {}) for a bodyless POST
   if (body === undefined || body === null || typeof body !== "object") {
     throw ApiError.invalid(["Request body is required and must be a JSON object."]);
   }
@@ -35,7 +31,7 @@ function validateRouteRequest(req, res, next) {
     details
   );
 
-  // preferences is optional; defaults avoidHighDensity=true, crowdThreshold=70.
+  // preferences optional: defaults avoidHighDensity=true, crowdThreshold=70
   const prefsIn =
     body.preferences && typeof body.preferences === "object"
       ? body.preferences

@@ -5,33 +5,16 @@ const polyline = require("../utils/polyline");
 const { haversineMetres } = require("../utils/geo");
 const { ApiError } = require("../middleware/errorHandler");
 
-// If start and destination are essentially the same point, there is no route to
-// walk. Used to exercise the no-routes path deterministically.
 const SAME_POINT_METRES = 5;
 
 /**
- * Candidate walking routes.
- *
- * WHY the key stays here: the Google Maps API key is read ONLY by this backend
- * (from env) and is never placed in any response. The browser never sees it, so
- * it can't be scraped from network traffic and used to run up our bill. This is
- * the whole reason the frontend talks to us instead of Google directly.
- *
- * Calls the Google Routes API with a timeout, requests alternative routes, and
- * normalises them into candidate routes with decoded geometry. Segment-level
- * crowd scoring is added later by the route service from pedestrian data.
- *
- * No mock fallback: Google is a required upstream. GOOGLE_MAPS_API_KEY absent
- * or the call failing both throw ApiError.upstream() - a genuine "0 routes
- * found between two valid points" answer from Google is NOT an error and stays
- * a normal empty-candidates result (AC 1.1.1 "No routes available").
- *
- * @returns {Promise<{candidates: object[], source: "live"}>}
+ * Candidate walking routes from Google Routes API. The API key is read only
+ * here (from env) and never placed in any response, so the browser can't
+ * scrape and reuse it. Segment-level crowd scoring is added later by the
+ * route service. No mock fallback - Google is a required upstream.
  */
 async function getCandidateRoutes(start, destination) {
-  // No usable route when origin and destination are the same place. Returning
-  // an empty candidate list lets the route service report noRoutesAvailable
-  // (AC 1.1.1 "No routes available" / AC 2.1.3 "Unable to generate directions").
+  // same origin/destination -> no route -> empty candidates (not an error)
   const straightLine = haversineMetres(
     start.latitude,
     start.longitude,
@@ -47,9 +30,8 @@ async function getCandidateRoutes(start, destination) {
   }
 
   try {
+    // Google answering with zero usable routes is a legitimate outcome, not a failure
     const candidates = await callGoogleRoutes(start, destination);
-    // Google answered but found nothing usable between two valid points - a
-    // legitimate outcome, not a failure (AC 1.1.1 "No routes available").
     return { candidates, source: "live" };
   } catch (err) {
     console.error("[google.service] Routes API call failed:", err.message);
@@ -71,8 +53,7 @@ async function callGoogleRoutes(start, destination) {
       headers: {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": env.googleMapsApiKey,
-        // Field mask keeps the response small and the bill predictable. Steps
-        // are the turn-by-turn instructions for the "Get Navigation" feature.
+        // field mask keeps the response small; steps are for "Get Navigation"
         "X-Goog-FieldMask":
           "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.description," +
           "routes.legs.steps.navigationInstruction,routes.legs.steps.distanceMeters,routes.legs.steps.staticDuration",
@@ -104,17 +85,14 @@ async function callGoogleRoutes(start, destination) {
         durationMinutes: parseGoogleDuration(r.duration),
         distanceMetres: r.distanceMeters || null,
         polyline: encoded || null,
-        // Decoded vertices; the route service samples these into segments and
-        // scores each against nearby pedestrian sensors.
-        points: encoded ? polyline.decode(encoded) : [],
-        // These are filled by the route service from live pedestrian data.
+        points: encoded ? polyline.decode(encoded) : [], // sampled into segments and scored later
+        // filled in later by the route service from live pedestrian data
         segments: null,
         sensorsUsed: [],
         congestionPoints: [],
         bypassedAreas: [],
         averageCountPerHour: null,
-        // Turn-by-turn walking directions ("Get Navigation").
-        steps: flattenSteps(r.legs),
+        steps: flattenSteps(r.legs), // "Get Navigation" turn-by-turn
       };
     });
   } finally {
@@ -126,9 +104,7 @@ function latLng(point) {
   return { latitude: point.latitude, longitude: point.longitude };
 }
 
-// Google returns one leg for a simple origin->destination walk (no
-// waypoints), each with its own ordered steps. Flatten to a single ordered
-// list for the "Get Navigation" turn-by-turn panel.
+// flattens Google's per-leg steps into one ordered list (no waypoints -> one leg)
 function flattenSteps(legs) {
   if (!Array.isArray(legs)) return [];
   const steps = [];

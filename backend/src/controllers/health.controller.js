@@ -1,11 +1,6 @@
 "use strict";
 
-/**
- * Liveness check. Deliberately touches NOTHING external - no database, no
- * Google, no pipeline. A health check that fails because someone else's service
- * is down is worse than no health check, because it triggers false alarms and
- * masks whether this process itself is healthy.
- */
+// liveness check - touches nothing external (no DB, no Google, no pipeline)
 function getHealth(req, res) {
   res.json({
     status: "ok",
