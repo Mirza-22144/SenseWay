@@ -47,9 +47,10 @@ export default function HomePage({ onFindQuietSpace }) {
       setRecommendedRouteId(data.recommendedRouteId);
       setFastestRouteId(data.fastestRouteId || null);
       setQuieterAlternativeRouteId(data.quieterAlternativeRouteId || null);
-      // Nothing is pre-selected: show every available route on the map first
-      // (Low/Moderate/High) and let the user pick one before anything is
-      // highlighted or "Get Navigation" becomes available.
+      // Nothing is "selected" yet — the user picks explicitly (no card
+      // highlight, no Get Navigation, no per-segment map shading until then).
+      // MapView still highlights the recommended route with a thicker line by
+      // default to satisfy AC 1.1.1 without this being a full selection.
       setSelectedRouteId(null);
 
       if (fetchedRoutes.length === 0) {
@@ -77,7 +78,23 @@ export default function HomePage({ onFindQuietSpace }) {
   }
 
   const selectedRoute = routes.find((route) => route.routeId === selectedRouteId) || null;
+  const fastestRoute = routes.find((route) => route.routeId === fastestRouteId) || null;
   const statusIds = { recommendedRouteId, fastestRouteId, quieterAlternativeRouteId };
+
+  // AC 1.2.1: "if live pedestrian data is unavailable... display the banner
+  // 'Live sensory data unavailable.'" for the route currently being viewed.
+  // Suppressed when the search-level banner above is already showing the
+  // identical message (every route lacks data) to avoid a visible duplicate.
+  const liveDataUnavailable =
+    selectedRoute?.dataState === "unavailable" && banner?.text !== "Live sensory data unavailable.";
+  // AC 1.2.3: the recommended route has high-crowd exposure but no qualifying
+  // quieter alternative was found (too slow, or none exists) — the "no live
+  // data" case is already covered by the banner above, so don't double up.
+  const showNoQuieterAlternativeNote =
+    !liveDataUnavailable &&
+    !quieterAlternativeRouteId &&
+    Boolean(fastestRoute) &&
+    fastestRoute.highCrowdDistanceMetres > 0;
 
   return (
     <div className="mx-auto flex max-w-[1440px] flex-col gap-8 px-16 py-8">
@@ -116,6 +133,10 @@ export default function HomePage({ onFindQuietSpace }) {
               {!selectedRoute && (
                 <Banner variant="brand">Select a route below to preview it on the map.</Banner>
               )}
+              {liveDataUnavailable && <Banner variant="warning">Live sensory data unavailable.</Banner>}
+              {showNoQuieterAlternativeNote && (
+                <Banner variant="brand">No suitable quieter alternative available.</Banner>
+              )}
               <CongestionSummary route={selectedRoute} />
               <RouteCardList
                 routes={routes}
@@ -143,6 +164,7 @@ export default function HomePage({ onFindQuietSpace }) {
               loadError={loadError}
               routes={routes}
               selectedRouteId={selectedRouteId}
+              recommendedRouteId={recommendedRouteId}
               start={start}
               destination={destination}
             />

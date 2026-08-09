@@ -3,7 +3,9 @@
 // disagree about what a route currently is.
 export function routeStatusLabel(route, { recommendedRouteId, fastestRouteId, quieterAlternativeRouteId }) {
   if (route.routeId === recommendedRouteId) return "Recommended";
-  if (route.routeId === quieterAlternativeRouteId) return "Alternative";
+  // AC 1.2.3: labelled distinctly from a plain alternative so the trade-off
+  // (extra time / high-crowd distance avoided) reads as a deliberate choice.
+  if (route.routeId === quieterAlternativeRouteId) return "Quieter Alternative";
   if (route.routeId === fastestRouteId) return "Fastest";
   return "Alternative";
 }

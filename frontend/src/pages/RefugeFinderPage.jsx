@@ -90,9 +90,9 @@ export default function RefugeFinderPage() {
         recommendedRouteId: data.recommendedRouteId,
         fastestRouteId: data.fastestRouteId || null,
         quieterAlternativeRouteId: data.quieterAlternativeRouteId || null,
-        // Nothing pre-selected: show every route (Low/Moderate/High) on the
-        // map first, matching the Home page flow — the user picks one before
-        // it's highlighted or Get Navigation becomes available.
+        // Nothing "selected" yet — see MapView's recommendedRouteId prop for
+        // how AC 2.1.3's "highlight the recommended path" is still satisfied
+        // without this being a full selection.
         selectedRouteId: null,
         destinationRefuge: refuge,
         destinationPoint,
@@ -125,6 +125,22 @@ export default function RefugeFinderPage() {
 
   const visibleRefuges = refuges.filter((refuge) => refugeType === "all" || refuge.indoorOutdoor === refugeType);
   const directionsRoute = directions?.routes.find((route) => route.routeId === directions.selectedRouteId) || null;
+  const directionsFastestRoute =
+    directions?.routes.find((route) => route.routeId === directions.fastestRouteId) || null;
+
+  // AC 1.2.1: banner for the route currently being viewed, not just the
+  // overall search outcome. Suppressed when the search-level banner above is
+  // already showing the identical message, to avoid a visible duplicate.
+  const directionsLiveDataUnavailable =
+    directionsRoute?.dataState === "unavailable" && banner?.text !== "Live sensory data unavailable.";
+  // AC 1.2.3: recommended route has high-crowd exposure but no qualifying
+  // quieter alternative was found.
+  const directionsShowNoQuieterAlternativeNote =
+    Boolean(directions) &&
+    !directionsLiveDataUnavailable &&
+    !directions.quieterAlternativeRouteId &&
+    Boolean(directionsFastestRoute) &&
+    directionsFastestRoute.highCrowdDistanceMetres > 0;
 
   if (mode === "directions" && directions) {
     return (
@@ -148,6 +164,12 @@ export default function RefugeFinderPage() {
               {!directionsRoute && (
                 <Banner variant="brand">Select a route below to preview it on the map.</Banner>
               )}
+              {directionsLiveDataUnavailable && (
+                <Banner variant="warning">Live sensory data unavailable.</Banner>
+              )}
+              {directionsShowNoQuieterAlternativeNote && (
+                <Banner variant="brand">No suitable quieter alternative available.</Banner>
+              )}
               <RouteCardList
                 routes={directions.routes}
                 recommendedRouteId={directions.recommendedRouteId}
@@ -168,6 +190,7 @@ export default function RefugeFinderPage() {
                 loadError={loadError}
                 routes={directions.routes}
                 selectedRouteId={directions.selectedRouteId}
+                recommendedRouteId={directions.recommendedRouteId}
                 start={origin}
                 destination={directions.destinationPoint}
               />

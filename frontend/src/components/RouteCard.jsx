@@ -1,19 +1,17 @@
 import SensoryBadge from "./SensoryBadge";
-import { formatDistance, formatDuration } from "../utils/format";
+import { formatDistance, formatDuration, formatSignedMinutes } from "../utils/format";
 import { routeStatusLabel } from "../utils/routeStatus";
 
 const BADGE_CLASS = {
   Recommended: "bg-success text-inverse",
+  "Quieter Alternative": "bg-success text-inverse",
   Alternative: "bg-subtle text-secondary",
   Fastest: "bg-subtle text-secondary",
 };
 
 function statusBadge(route, ids) {
   const text = routeStatusLabel(route, ids);
-  // The quieter alternative gets the same label text ("Alternative") as a
-  // plain non-recommended route, but highlighted green like Recommended.
-  const isQuieterAlternative = text === "Alternative" && route.routeId === ids.quieterAlternativeRouteId;
-  return { text, className: isQuieterAlternative ? "bg-success text-inverse" : BADGE_CLASS[text] };
+  return { text, className: BADGE_CLASS[text] };
 }
 
 // AC 1.1.1 (colour-coded route options) + AC 1.1.3 (select an alternative
@@ -45,6 +43,13 @@ export default function RouteCard({
         </span>
         <p className="text-lg font-semibold text-primary">{route.summary}</p>
       </div>
+
+      {route.routeId === quieterAlternativeRouteId && !dataUnavailable && (
+        <p className="text-xs font-medium text-success-ink">
+          {formatSignedMinutes(route.minutesSlowerThanRecommended)} · avoids{" "}
+          {formatDistance(route.highCrowdDistanceSavedMetres)} of high-crowd area
+        </p>
+      )}
 
       {dataUnavailable ? (
         <button

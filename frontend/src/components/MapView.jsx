@@ -37,13 +37,26 @@ function segmentPath(segment) {
   ];
 }
 
-// AC 1.1.1 (recommended route highlighted, thicker line) + AC 1.1.3 (selecting
-// an alternative re-highlights it, previous route becomes a thinner secondary
-// line) + AC 1.2.1 (the selected route is shaded segment-by-segment by
-// pedestrian density, with a legend). Non-selected routes stay a single line
-// colored by their overall sensoryRating — full per-segment shading for every
-// route on screen at once would be unreadable with three routes stacked.
-export default function MapView({ hasMapsKey, isLoaded, loadError, routes, selectedRouteId, start, destination }) {
+// AC 1.1.1 (recommended route highlighted, thicker line, WITHOUT requiring
+// the user to select anything first) + AC 1.1.3 (selecting an alternative
+// re-highlights it, previous route becomes a thinner secondary line) +
+// AC 1.2.1 (the selected route is shaded segment-by-segment by pedestrian
+// density, with a legend — that per-segment detail only appears once the
+// user actually picks a route from the cards, per AC 1.2.1's own "Given the
+// user has selected a route" precondition). Non-selected routes stay a
+// single line colored by their overall sensoryRating — full per-segment
+// shading for every route on screen at once would be unreadable with three
+// routes stacked.
+export default function MapView({
+  hasMapsKey,
+  isLoaded,
+  loadError,
+  routes,
+  selectedRouteId,
+  recommendedRouteId,
+  start,
+  destination,
+}) {
   if (!hasMapsKey) {
     return (
       <div className="flex h-[460px] w-full flex-col items-center justify-center rounded-xl border border-dashed border-line bg-base p-6 text-center">
@@ -74,6 +87,10 @@ export default function MapView({ hasMapsKey, isLoaded, loadError, routes, selec
 
   const center = start ? { lat: start.latitude, lng: start.longitude } : DEFAULT_CENTER;
   const selectedRoute = routes.find((route) => route.routeId === selectedRouteId) || null;
+  // Before the user picks anything, the recommended route still gets the
+  // AC 1.1.1 "thicker line" treatment — just without becoming "selected"
+  // (no per-segment shading, no card highlight, no Get Navigation).
+  const highlightRouteId = selectedRouteId || recommendedRouteId;
 
   return (
     <div>
@@ -84,22 +101,26 @@ export default function MapView({ hasMapsKey, isLoaded, loadError, routes, selec
 
           {routes
             .filter((route) => route.routeId !== selectedRouteId)
-            .map((route) => (
-              <Polyline
-                key={route.routeId}
-                path={routeToPath(route)}
-                options={{
-                  strokeColor: sensoryMeta(route.sensoryRating).mapColor,
-                  // Nothing selected yet: show every route at an equal,
-                  // clearly visible weight so the user can browse Low/
-                  // Moderate/High before choosing. Once something IS
-                  // selected, the rest dim down to secondary lines.
-                  strokeWeight: selectedRouteId ? 3 : 4,
-                  strokeOpacity: selectedRouteId ? 0.5 : 0.85,
-                  zIndex: 1,
-                }}
-              />
-            ))}
+            .map((route) => {
+              const isHighlighted = !selectedRouteId && route.routeId === highlightRouteId;
+              return (
+                <Polyline
+                  key={route.routeId}
+                  path={routeToPath(route)}
+                  options={{
+                    strokeColor: sensoryMeta(route.sensoryRating).mapColor,
+                    // Nothing selected yet: every route stays visible so the
+                    // user can browse Low/Moderate/High, but the recommended
+                    // one is drawn thicker and fully opaque (AC 1.1.1). Once
+                    // something IS selected, the rest dim down to secondary
+                    // lines regardless of which was recommended.
+                    strokeWeight: selectedRouteId ? 3 : isHighlighted ? 5 : 4,
+                    strokeOpacity: selectedRouteId ? 0.5 : isHighlighted ? 1 : 0.85,
+                    zIndex: isHighlighted ? 2 : 1,
+                  }}
+                />
+              );
+            })}
 
           {selectedRoute &&
             (selectedRoute.segments || []).map((segment) => (

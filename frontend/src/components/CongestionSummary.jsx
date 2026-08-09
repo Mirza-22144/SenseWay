@@ -7,15 +7,15 @@ import { formatDistance, formatDuration } from "../utils/format";
 export default function CongestionSummary({ route }) {
   if (!route) return null;
 
-  let highCrowdValue = formatDistance(route.highCrowdDistanceMetres);
-  let highCrowdIsSentence = false;
+  // AC 1.2.2 dev step example: "220m through high-crowd areas" — a plain-
+  // language sentence, not a bare distance value.
+  let highCrowdValue = `${formatDistance(route.highCrowdDistanceMetres)} through high-crowd areas`;
+  let highCrowdIsSentence = true;
 
   if (route.dataState === "unavailable") {
     highCrowdValue = "Live congestion data unavailable.";
-    highCrowdIsSentence = true;
   } else if (!route.highCrowdDistanceMetres) {
     highCrowdValue = "No high-crowd areas on this route.";
-    highCrowdIsSentence = true;
   }
 
   return (
