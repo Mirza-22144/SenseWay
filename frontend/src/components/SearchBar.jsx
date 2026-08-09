@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import LocationField from "./LocationField";
 import { isWithinMelbourne } from "../constants/melbourne";
 
@@ -15,6 +15,8 @@ export default function SearchBar({
   loading,
 }) {
   const [geoError, setGeoError] = useState(null);
+  const startFieldRef = useRef(null);
+  const destinationFieldRef = useRef(null);
 
   function useCurrentLocation() {
     if (!navigator.geolocation) {
@@ -39,12 +41,21 @@ export default function SearchBar({
     );
   }
 
-  const canFindRoute = Boolean(start && destination) && !loading;
+  function handleFindRouteClick() {
+    // AC: on a missing/invalid field, prompt for it and don't generate a
+    // route - run both so the user sees every problem at once, not one at a
+    // time across repeated clicks.
+    const startError = startFieldRef.current?.validate();
+    const destinationError = destinationFieldRef.current?.validate();
+    if (startError || destinationError) return;
+    onFindRoute();
+  }
 
   return (
     <div className="flex flex-col gap-5 rounded-xl border border-line bg-base p-6">
       <div className="flex flex-col gap-1">
         <LocationField
+          ref={startFieldRef}
           id="start-location"
           labelText="Start Location"
           value={start}
@@ -59,6 +70,7 @@ export default function SearchBar({
       </div>
 
       <LocationField
+        ref={destinationFieldRef}
         id="destination-location"
         labelText="Destination"
         value={destination}
@@ -69,8 +81,8 @@ export default function SearchBar({
 
       <button
         type="button"
-        onClick={onFindRoute}
-        disabled={!canFindRoute}
+        onClick={handleFindRouteClick}
+        disabled={loading}
         className="w-full cursor-pointer rounded-lg bg-brand py-3 text-sm font-semibold text-inverse hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {loading ? "Finding route…" : "Find Route"}

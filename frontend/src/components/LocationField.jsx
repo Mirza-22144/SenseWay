@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { MELBOURNE_BOUNDS, isWithinMelbourne } from "../constants/melbourne";
 
 const FIELD_CLASS = "h-[50px] w-full rounded-lg border border-line bg-base px-4 py-3 text-sm text-primary";
@@ -8,16 +8,50 @@ const FIELD_CLASS = "h-[50px] w-full rounded-lg border border-line bg-base px-4 
 // Places API, which this project's key deliberately does not allow). Shared
 // by SearchBar (Story 1.1) and RefugeSearchBar (Story 2.1). Requires
 // VITE_GOOGLE_MAPS_API_KEY to be set — see frontend/.env.example.
-export default function LocationField({ id, labelText, onChange, hasMapsKey, isLoaded }) {
+//
+// Exposes validate() via ref so callers can prompt for a missing/invalid
+// value on submit (AC: "The application prompts for the missing field" /
+// "Please enter a valid Melbourne CBD location" is displayed).
+const LocationField = forwardRef(function LocationField(
+  { id, labelText, value, onChange, hasMapsKey, isLoaded },
+  ref
+) {
   const containerRef = useRef(null);
+  const rawTextRef = useRef("");
   const [error, setError] = useState(null);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      validate() {
+        if (value) {
+          setError(null);
+          return null;
+        }
+        const raw = rawTextRef.current.trim();
+        if (!raw) {
+          const message = `Please enter a ${labelText.toLowerCase()}.`;
+          setError(message);
+          return message;
+        }
+        const message = "Please enter a valid Melbourne CBD location.";
+        setError(message);
+        return message;
+      },
+    }),
+    [value, labelText]
+  );
 
   useEffect(() => {
     if (!hasMapsKey || !isLoaded || !containerRef.current) return undefined;
     if (!window.google?.maps?.places?.PlaceAutocompleteElement) return undefined;
 
+    // A bias (not a hard restriction): suggestions favour the Melbourne CBD,
+    // but any place the user types/selects is still accepted here and then
+    // validated below, so an out-of-area entry surfaces our own message
+    // instead of silently having no matching suggestions.
     const autocomplete = new window.google.maps.places.PlaceAutocompleteElement({
-      locationRestriction: {
+      locationBias: {
         north: MELBOURNE_BOUNDS.latMax,
         south: MELBOURNE_BOUNDS.latMin,
         east: MELBOURNE_BOUNDS.lonMax,
@@ -32,6 +66,12 @@ export default function LocationField({ id, labelText, onChange, hasMapsKey, isL
     // `color-scheme: light` and renders its suggestion dropdown dark when
     // the user's OS/browser is in dark mode - low-contrast, hard to read.
     autocomplete.style.setProperty("color-scheme", "light");
+
+    function handleInput(event) {
+      const target = event.composedPath ? event.composedPath()[0] : event.target;
+      rawTextRef.current = target?.value ?? "";
+      setError(null);
+    }
 
     async function handleSelect({ placePrediction }) {
       try {
@@ -51,10 +91,12 @@ export default function LocationField({ id, labelText, onChange, hasMapsKey, isL
       }
     }
 
+    autocomplete.addEventListener("input", handleInput);
     autocomplete.addEventListener("gmp-select", handleSelect);
     containerRef.current.appendChild(autocomplete);
 
     return () => {
+      autocomplete.removeEventListener("input", handleInput);
       autocomplete.removeEventListener("gmp-select", handleSelect);
       autocomplete.remove();
     };
@@ -86,4 +128,6 @@ export default function LocationField({ id, labelText, onChange, hasMapsKey, isL
       {error && <p className="text-xs text-danger-ink">{error}</p>}
     </div>
   );
-}
+});
+
+export default LocationField;
