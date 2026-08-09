@@ -53,4 +53,4 @@ async function close() {
   }
 }
 
-module.exports = { getPool, query, isConfigured, close };
+module.exports = { query, close };

@@ -55,15 +55,8 @@ function quarterHourSteps(start, count) {
   return out;
 }
 
-function isValidDate(d) {
-  return d instanceof Date && !Number.isNaN(d.getTime());
-}
-
 module.exports = {
-  FIFTEEN_MIN_MS,
   MELBOURNE_TZ,
   melbourneParts,
-  floorToQuarterHour,
   quarterHourSteps,
-  isValidDate,
 };

@@ -409,6 +409,4 @@ module.exports = {
   finalizeRoutes,
   scoreCandidates,
   byCalmestThenFastest,
-  REFUGE_LOOKUP_MINUTES,
-  CONGESTION_POINT_SCORE,
 };

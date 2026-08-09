@@ -113,5 +113,4 @@ function stripInternal(iv) {
 module.exports = {
   forecast,
   buildInterval,
-  MIN_CONFIDENT_SAMPLE,
 };

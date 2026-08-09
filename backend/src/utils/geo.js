@@ -71,12 +71,6 @@ function metresForWalkingMinutes(minutes) {
 }
 
 module.exports = {
-  WALKING_SPEED_METRES_PER_MINUTE,
-  MELBOURNE_BOUNDS,
-  LAT_MIN,
-  LAT_MAX,
-  LON_MIN,
-  LON_MAX,
   isFiniteNumber,
   withinGlobalRange,
   withinMelbourne,

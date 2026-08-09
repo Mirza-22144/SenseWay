@@ -24,4 +24,4 @@ function minuteCountToHourlyRate(minuteCount) {
   return minuteCount * 60;
 }
 
-module.exports = { PEAK_REFERENCE_COUNT, countToCrowdScore, minuteCountToHourlyRate };
+module.exports = { countToCrowdScore, minuteCountToHourlyRate };

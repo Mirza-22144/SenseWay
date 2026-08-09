@@ -115,4 +115,4 @@ async function getRecentMeanCount(sensorId) {
   };
 }
 
-module.exports = { findNearestSensor, getHourlyMean, getRecentMeanCount, RECENT_WINDOW_MINUTES };
+module.exports = { findNearestSensor, getHourlyMean, getRecentMeanCount };

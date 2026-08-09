@@ -48,8 +48,6 @@ function meanScore(scores) {
 }
 
 module.exports = {
-  SENSORY_BANDS,
-  STALE_AFTER_MS,
   RATING_LOW,
   RATING_MODERATE,
   RATING_HIGH,

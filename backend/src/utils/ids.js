@@ -40,4 +40,4 @@ function refugeId(name, latitude, longitude) {
   return `refuge-${digest}`;
 }
 
-module.exports = { congestionPointId, refugeId, pointHash };
+module.exports = { congestionPointId, refugeId };

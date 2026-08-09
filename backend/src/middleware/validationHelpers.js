@@ -91,7 +91,6 @@ function validateNumberInRange(value, fieldName, details, { min, max, fallback }
 }
 
 module.exports = {
-  OUT_OF_MELBOURNE_DETAIL,
   validateCoordinatePair,
   validateDepartureTime,
   validateCrowdThreshold,
