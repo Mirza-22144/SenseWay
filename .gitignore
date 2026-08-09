@@ -29,8 +29,8 @@ ENV-NOTES.md
 .DS_Store
 Thumbs.db
 
-# Claude Code local/personal settings (machine-specific, not shared config)
-.claude/settings.local.json
+# local/personal tool settings (machine-specific, not shared config)
+.mcp.json
 
 # Microsoft Office temporary/lock files (e.g. ~$report.docx)
 ~$*
