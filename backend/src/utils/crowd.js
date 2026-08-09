@@ -30,12 +30,14 @@ function countToCrowdScore(count) {
   return Math.max(0, Math.min(100, score));
 }
 
-// Normalise a PEDESTRIAN_MINUTE_COUNT reading to the same hourly scale
-// countToCrowdScore expects, by extrapolating the one-minute count to a
-// steady hourly rate - the standard way to compare a short-window count
-// against an hourly reference. A standard unit conversion, not a fabricated
-// number: it says "at this rate, sustained for an hour", which is exactly
-// what a live/current reading means.
+// Normalise a per-minute pedestrian rate (from PEDESTRIAN_MINUTE_COUNT - a
+// single row's count, or the recent-window mean returned by
+// pedestrian.repository.js's getRecentMeanCount) to the same hourly scale
+// countToCrowdScore expects, by extrapolating it to a steady hourly rate -
+// the standard way to compare a short-window rate against an hourly
+// reference. A standard unit conversion, not a fabricated number: it says
+// "at this rate, sustained for an hour", which is exactly what a live/
+// current reading means.
 function minuteCountToHourlyRate(minuteCount) {
   if (typeof minuteCount !== "number" || !Number.isFinite(minuteCount)) {
     return null;

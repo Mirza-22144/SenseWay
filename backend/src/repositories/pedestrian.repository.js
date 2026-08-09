@@ -102,31 +102,68 @@ async function getHourlyMean(sensorId, dayOfWeek, hour) {
   };
 }
 
+// The source dataset (Pedestrian Counting System - Past Hour) itself only
+// refreshes every 15 minutes, so a single poll typically lands a batch of
+// ~15 individual one-minute rows at once, not a steady one-per-minute
+// trickle. Matches that cadence, not chosen arbitrarily.
+const RECENT_WINDOW_MINUTES = 15;
+
 /**
- * Most recent minute-level count for a sensor, from PEDESTRIAN_MINUTE_COUNT.
- * Used to score live routes and to decide whether the reading is fresh enough
- * to trust (older than 60 min -> the scoring service returns "Unknown").
+ * Mean minute-level count for a sensor over the last RECENT_WINDOW_MINUTES,
+ * from PEDESTRIAN_MINUTE_COUNT. Used to score live routes and to decide
+ * whether the reading is fresh enough to trust (dataStateFor treats data
+ * older than the staleness horizon as "stale"/"unavailable").
  *
- * Returns { count, observedAt } or null.
+ * WHY a window mean, not a single row: pedestrian counts are naturally
+ * bursty minute to minute (a signal-cycle gap, a tram unloading), so taking
+ * only the single newest row and extrapolating it x60 (minuteCountToHourlyRate)
+ * amplifies one noisy minute into a 60x swing in the hourly-scale score, and
+ * two runs a minute apart could land in different sensory bands even though
+ * the corridor hasn't actually changed. Averaging the whole recent batch is a
+ * far steadier "how busy is it right now" without losing freshness, since the
+ * window is exactly as wide as the source's own refresh cadence.
+ *
+ * Returns { count, observedAt } or null. count is the MEAN per-minute rate
+ * across the window - averaging first, then x60 in minuteCountToHourlyRate(),
+ * is equivalent to x60-ing each row and then averaging.
+ *
+ * The window is anchored to this sensor's OWN latest row, not to wall-clock
+ * NOW() - deliberately, not an oversight. If ingestion is behind (e.g. the
+ * pipeline hasn't polled in the last 30+ minutes), anchoring to NOW() would
+ * find zero rows and report "no live data" even though we genuinely have a
+ * reading - just an old one. That would silently swallow AC 1.1.2's "stale"
+ * state (a route should still show its rating with a "may be outdated"
+ * warning, per scoring.service.js's isStale/STALE_AFTER_MS) and misreport it
+ * as "unavailable" instead. Anchoring to the sensor's own latest timestamp
+ * means we always average whatever the most recent batch actually was, and
+ * leave the freshness judgement entirely to the existing staleness check
+ * downstream, which still compares the real observedAt to NOW().
  */
-async function getLatestCount(sensorId) {
+async function getRecentMeanCount(sensorId) {
   const sql = `
     SELECT
-      m.Total_of_Direction AS count,
-      m.Sensing_DateTime   AS observed_at
+      AVG(m.Total_of_Direction)::float AS mean_count,
+      MAX(m.Sensing_DateTime)          AS observed_at
     FROM PEDESTRIAN_MINUTE_COUNT m
     WHERE m.Location_ID = $1
-    ORDER BY m.Sensing_DateTime DESC
-    LIMIT 1
+      AND m.Sensing_DateTime >= (
+        SELECT MAX(m2.Sensing_DateTime)
+        FROM PEDESTRIAN_MINUTE_COUNT m2
+        WHERE m2.Location_ID = $1
+      ) - make_interval(mins => $2::int)
   `;
-  const result = await db.query(sql, [sensorId]);
+  const result = await db.query(sql, [sensorId, RECENT_WINDOW_MINUTES]);
   if (!result || result.rows.length === 0) return null;
 
   const r = result.rows[0];
+  // AVG()/MAX() over zero matching rows still returns one row, with NULLs -
+  // that means "no rows for this sensor at all", not "a reading of zero".
+  if (r.mean_count == null) return null;
+
   return {
-    count: r.count == null ? null : Number(r.count),
+    count: Number(r.mean_count),
     observedAt: r.observed_at ? new Date(r.observed_at).toISOString() : null,
   };
 }
 
-module.exports = { findNearestSensor, getHourlyMean, getLatestCount };
+module.exports = { findNearestSensor, getHourlyMean, getRecentMeanCount, RECENT_WINDOW_MINUTES };

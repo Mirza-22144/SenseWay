@@ -294,13 +294,23 @@ function byCalmestThenFastest(a, b) {
  * identically (and exactly once) no matter which endpoint asked for it.
  */
 async function scoreCandidates(candidates, now) {
+  // Every candidate's segment scoring is independent of every other
+  // candidate's - score them all at once instead of one route at a time. The
+  // pg pool (max: 5, see config/database.js) naturally caps how many DB
+  // queries actually run at once, so this just removes an artificial
+  // serialisation, not a real concurrency risk.
+  const enrichedCandidates = await Promise.all(
+    candidates.map((c) => {
+      if (!c.dataUpdatedAt) c.dataUpdatedAt = now.toISOString();
+      return scoreLiveCandidate(c, now);
+    })
+  );
+
   let pedestrianSource = null;
-  for (const c of candidates) {
-    if (!c.dataUpdatedAt) c.dataUpdatedAt = now.toISOString();
-    const enriched = await scoreLiveCandidate(c, now);
+  enrichedCandidates.forEach((enriched, i) => {
     pedestrianSource = mergeSource(pedestrianSource, enriched.pedestrianSource);
-    Object.assign(c, enriched.candidateFields);
-  }
+    Object.assign(candidates[i], enriched.candidateFields);
+  });
   return pedestrianSource;
 }
 
@@ -308,10 +318,21 @@ async function scoreCandidates(candidates, now) {
  * Score a live Google candidate segment-by-segment from pedestrian data,
  * respecting sensor coverage: a segment with no sensor within
  * COVERAGE_RADIUS_METRES is left UNSCORED (hasLiveData false), never guessed.
+ *
+ * One segment's lookup has zero dependency on any other segment's, so they're
+ * all scored at once (scoreSegment below) instead of one at a time - this is
+ * what actually cuts route-search latency, since a route can have up to 5
+ * segments x 2 DB queries each.
  */
 async function scoreLiveCandidate(candidate, now) {
   const points = Array.isArray(candidate.points) ? candidate.points : [];
   const sampled = samplepoints(points, 6);
+
+  const pairs = [];
+  for (let i = 0; i < sampled.length - 1; i += 1) {
+    pairs.push([sampled[i], sampled[i + 1]]);
+  }
+  const scoredSegments = await Promise.all(pairs.map(([from, to]) => scoreSegment(from, to)));
 
   const segments = [];
   const sensorsUsed = [];
@@ -321,71 +342,33 @@ async function scoreLiveCandidate(candidate, now) {
   let oldestObservedAt = null;
   let pedestrianSource = null;
 
-  for (let i = 0; i < sampled.length - 1; i += 1) {
-    const from = sampled[i];
-    const to = sampled[i + 1];
-    const mid = {
-      latitude: (from.latitude + to.latitude) / 2,
-      longitude: (from.longitude + to.longitude) / 2,
-    };
-    const lengthMetres = haversineMetres(
-      from.latitude,
-      from.longitude,
-      to.latitude,
-      to.longitude
-    );
-
-    // No DB configured, or no sensor found at all, both mean "not covered" -
-    // never invented, exactly like a real sensor that's just too far away.
-    const sensor = await pedestrian.nearestSensor(mid.latitude, mid.longitude);
-    const covered = Boolean(sensor) && sensor.distanceMetres <= metrics.COVERAGE_RADIUS_METRES;
-
-    let crowdScore = null;
-    let hasLiveData = false;
-
-    if (covered) {
-      const latest = await pedestrian.latestCount(sensor.sensorId);
-      // latest.count is a PEDESTRIAN_MINUTE_COUNT reading - normalise to an
-      // hourly rate before scoring (countToCrowdScore expects hourly scale).
-      const hourlyRate = minuteCountToHourlyRate(latest.count);
-      crowdScore = countToCrowdScore(hourlyRate);
-      hasLiveData = typeof crowdScore === "number";
-      if (hasLiveData) {
-        pedestrianSource = "live";
-        counts.push(hourlyRate);
-        if (latest.observedAt) {
-          if (!oldestObservedAt || latest.observedAt < oldestObservedAt) {
-            oldestObservedAt = latest.observedAt;
-          }
-        }
-        if (!seenSensors.has(sensor.sensorId)) {
-          seenSensors.add(sensor.sensorId);
-          sensorsUsed.push({
-            sensorId: sensor.sensorId,
-            name: sensor.name,
-            distanceMetres: sensor.distanceMetres,
-          });
-        }
-        if (crowdScore >= CONGESTION_POINT_SCORE) {
-          congestionPoints.push({
-            name: sensor.name,
-            latitude: mid.latitude,
-            longitude: mid.longitude,
-            crowdScore,
-          });
+  for (const scored of scoredSegments) {
+    segments.push(scored.segment);
+    if (scored.hasLiveData) {
+      pedestrianSource = "live";
+      counts.push(scored.hourlyRate);
+      if (scored.observedAt) {
+        if (!oldestObservedAt || scored.observedAt < oldestObservedAt) {
+          oldestObservedAt = scored.observedAt;
         }
       }
+      if (!seenSensors.has(scored.sensor.sensorId)) {
+        seenSensors.add(scored.sensor.sensorId);
+        sensorsUsed.push({
+          sensorId: scored.sensor.sensorId,
+          name: scored.sensor.name,
+          distanceMetres: scored.sensor.distanceMetres,
+        });
+      }
+      if (scored.segment.crowdScore >= CONGESTION_POINT_SCORE) {
+        congestionPoints.push({
+          name: scored.sensor.name,
+          latitude: scored.mid.latitude,
+          longitude: scored.mid.longitude,
+          crowdScore: scored.segment.crowdScore,
+        });
+      }
     }
-
-    segments.push({
-      fromLatitude: from.latitude,
-      fromLongitude: from.longitude,
-      toLatitude: to.latitude,
-      toLongitude: to.longitude,
-      lengthMetres,
-      hasLiveData,
-      crowdScore,
-    });
   }
 
   return {
@@ -400,6 +383,55 @@ async function scoreLiveCandidate(candidate, now) {
         : null,
       dataUpdatedAt: oldestObservedAt || now.toISOString(),
     },
+  };
+}
+
+// Score one segment: nearest sensor, then (if covered) its latest reading.
+// Self-contained and independent of every other segment's result, which is
+// exactly what lets scoreLiveCandidate run many of these concurrently.
+async function scoreSegment(from, to) {
+  const mid = {
+    latitude: (from.latitude + to.latitude) / 2,
+    longitude: (from.longitude + to.longitude) / 2,
+  };
+  const lengthMetres = haversineMetres(from.latitude, from.longitude, to.latitude, to.longitude);
+
+  // No DB configured, or no sensor found at all, both mean "not covered" -
+  // never invented, exactly like a real sensor that's just too far away.
+  const sensor = await pedestrian.nearestSensor(mid.latitude, mid.longitude);
+  const covered = Boolean(sensor) && sensor.distanceMetres <= metrics.COVERAGE_RADIUS_METRES;
+
+  let crowdScore = null;
+  let hasLiveData = false;
+  let hourlyRate = null;
+  let observedAt = null;
+
+  if (covered) {
+    const latest = await pedestrian.recentMeanCount(sensor.sensorId);
+    // latest.count is the mean per-minute rate over the recent window
+    // (pedestrian.repository.js's getRecentMeanCount) - normalise to an
+    // hourly rate before scoring (countToCrowdScore expects hourly scale).
+    hourlyRate = minuteCountToHourlyRate(latest.count);
+    crowdScore = countToCrowdScore(hourlyRate);
+    hasLiveData = typeof crowdScore === "number";
+    observedAt = latest.observedAt;
+  }
+
+  return {
+    segment: {
+      fromLatitude: from.latitude,
+      fromLongitude: from.longitude,
+      toLatitude: to.latitude,
+      toLongitude: to.longitude,
+      lengthMetres,
+      hasLiveData,
+      crowdScore,
+    },
+    hasLiveData,
+    hourlyRate,
+    observedAt,
+    sensor,
+    mid,
   };
 }
 

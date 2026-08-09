@@ -45,18 +45,21 @@ async function hourlyMean(sensorId, dayOfWeek, hour) {
 }
 
 /**
- * Latest live count for a sensor (for scoring live routes and freshness).
- * Returns { count, observedAt } - both null when there's nothing to report.
+ * Recent mean live count for a sensor, over a short rolling window matching
+ * the source data's own refresh cadence (for scoring live routes and
+ * freshness - see getRecentMeanCount()'s doc for why a window mean rather
+ * than a single reading). Returns { count, observedAt } - both null when
+ * there's nothing to report.
  */
-async function latestCount(sensorId) {
+async function recentMeanCount(sensorId) {
   if (!sensorId) return { count: null, observedAt: null };
   try {
-    const latest = await repo.getLatestCount(sensorId);
-    return latest || { count: null, observedAt: null };
+    const recent = await repo.getRecentMeanCount(sensorId);
+    return recent || { count: null, observedAt: null };
   } catch (err) {
-    console.error("[pedestrian.service] latestCount DB error:", err.message);
+    console.error("[pedestrian.service] recentMeanCount DB error:", err.message);
     return { count: null, observedAt: null };
   }
 }
 
-module.exports = { nearestSensor, hourlyMean, latestCount };
+module.exports = { nearestSensor, hourlyMean, recentMeanCount };
