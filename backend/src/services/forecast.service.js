@@ -25,6 +25,8 @@ const MIN_CONFIDENT_SAMPLE = 10;
 async function forecast(request) {
   const { latitude, longitude, departureTime, hours } = request;
 
+  // No DB configured, or nothing nearby - honest "no sensor" rather than
+  // inventing one; every interval below degrades to Unknown/low-confidence.
   const sensor = await pedestrian.nearestSensor(latitude, longitude);
 
   const intervalCount = hours * 4; // 15-minute steps
@@ -37,12 +39,9 @@ async function forecast(request) {
     // is recorded in Melbourne local time and Cloud Run runs in UTC, so using
     // start.getDay()/getHours() here would be silently wrong in production.
     const { dayOfWeek: dow, hour } = melbourneParts(start);
-    const { mean, sampleSize } = await pedestrian.hourlyMean(
-      sensor.sensorId,
-      dow,
-      hour,
-      sensor.source
-    );
+    const { mean, sampleSize } = sensor
+      ? await pedestrian.hourlyMean(sensor.sensorId, dow, hour)
+      : { mean: null, sampleSize: 0 };
     raw.push({ start, mean, sampleSize });
   }
 
@@ -60,11 +59,9 @@ async function forecast(request) {
 
   return {
     location: { latitude, longitude },
-    nearestSensor: {
-      sensorId: sensor.sensorId,
-      name: sensor.name,
-      distanceMetres: sensor.distanceMetres,
-    },
+    nearestSensor: sensor
+      ? { sensorId: sensor.sensorId, name: sensor.name, distanceMetres: sensor.distanceMetres }
+      : null,
     method: "historical mean for this sensor, day-of-week and hour",
     // Sample size of the requested (first) interval, so the caller can judge how
     // much to trust the headline number.

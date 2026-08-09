@@ -34,24 +34,14 @@ async function recommend(request) {
   const threshold = preferences.crowdThreshold;
   const now = new Date();
 
-  // 1. Candidate geometry (live Google or mock). Empty => no routes exist.
+  // 1. Candidate geometry from Google. Empty => no routes exist.
   const { candidates, source: googleSource } = await google.getCandidateRoutes(
     start,
     destination
   );
 
-  // 2. Ensure every candidate has scored segments. Mock candidates already do;
-  //    live candidates get scored (with coverage) here from pedestrian data.
-  let pedestrianSource = null;
-  for (const c of candidates) {
-    if (!c.dataUpdatedAt) c.dataUpdatedAt = now.toISOString();
-    if (c.segments && c.segments.length && c.segments[0].lengthMetres != null) {
-      continue; // mock candidate: fully formed
-    }
-    const enriched = await scoreLiveCandidate(c, now);
-    pedestrianSource = mergeSource(pedestrianSource, enriched.pedestrianSource);
-    Object.assign(c, enriched.candidateFields);
-  }
+  // 2. Score every candidate's segments against live pedestrian data.
+  const pedestrianSource = await scoreCandidates(candidates, now);
 
   // 3. Assemble full route objects (no cross-route fields yet).
   const assembled = candidates.map((c) => assembleBase(c, { threshold, now }));
@@ -83,12 +73,22 @@ async function recommend(request) {
       "We've recommended the calmest of them, but none avoids high density entirely."
     : null;
 
-  // 7. Refuge spaces near the start.
-  const refugeResult = await refuge.findNearby(
-    start.latitude,
-    start.longitude,
-    REFUGE_LOOKUP_MINUTES
-  );
+  // 7. Refuge spaces near the start. This is a secondary enrichment of the
+  // route response, not this endpoint's own AC - a refuge-pipeline outage
+  // (refuge.findNearby throws ApiError.upstream() for AC 2.1.1's own
+  // endpoint) must not fail route recommendations, which have nothing to do
+  // with the pipeline. Degrade to no suggested refuges instead.
+  let refugeSpaces = [];
+  try {
+    const refugeResult = await refuge.findNearby(
+      start.latitude,
+      start.longitude,
+      REFUGE_LOOKUP_MINUTES
+    );
+    refugeSpaces = refugeResult.refuges;
+  } catch (err) {
+    console.warn("[route.service] refuge lookup failed, omitting refugeSpaces:", err.message);
+  }
 
   return {
     query: request,
@@ -100,7 +100,7 @@ async function recommend(request) {
     noLowSensoryRouteAvailable,
     notice,
     routes,
-    refugeSpaces: refugeResult.refuges,
+    refugeSpaces,
     dataUpdatedAt: now.toISOString(),
     dataSource: resolveDataSource(googleSource, pedestrianSource),
   };
@@ -289,10 +289,25 @@ function byCalmestThenFastest(a, b) {
 }
 
 /**
+ * Score every candidate's segments against live pedestrian data, in place.
+ * Shared by recommend() and the reroute service, so a candidate is scored
+ * identically (and exactly once) no matter which endpoint asked for it.
+ */
+async function scoreCandidates(candidates, now) {
+  let pedestrianSource = null;
+  for (const c of candidates) {
+    if (!c.dataUpdatedAt) c.dataUpdatedAt = now.toISOString();
+    const enriched = await scoreLiveCandidate(c, now);
+    pedestrianSource = mergeSource(pedestrianSource, enriched.pedestrianSource);
+    Object.assign(c, enriched.candidateFields);
+  }
+  return pedestrianSource;
+}
+
+/**
  * Score a live Google candidate segment-by-segment from pedestrian data,
  * respecting sensor coverage: a segment with no sensor within
  * COVERAGE_RADIUS_METRES is left UNSCORED (hasLiveData false), never guessed.
- * Only runs on the live path; not covered by the mock test suite (see README).
  */
 async function scoreLiveCandidate(candidate, now) {
   const points = Array.isArray(candidate.points) ? candidate.points : [];
@@ -320,21 +335,20 @@ async function scoreLiveCandidate(candidate, now) {
       to.longitude
     );
 
+    // No DB configured, or no sensor found at all, both mean "not covered" -
+    // never invented, exactly like a real sensor that's just too far away.
     const sensor = await pedestrian.nearestSensor(mid.latitude, mid.longitude);
-    const covered = sensor.distanceMetres <= metrics.COVERAGE_RADIUS_METRES;
+    const covered = Boolean(sensor) && sensor.distanceMetres <= metrics.COVERAGE_RADIUS_METRES;
 
     let crowdScore = null;
     let hasLiveData = false;
 
     if (covered) {
-      const latest = await pedestrian.latestCount(sensor.sensorId, sensor.source);
-      pedestrianSource = mergeSource(
-        pedestrianSource,
-        mergeSource(sensor.source, latest.source)
-      );
+      const latest = await pedestrian.latestCount(sensor.sensorId);
       crowdScore = countToCrowdScore(latest.count);
       hasLiveData = typeof crowdScore === "number";
       if (hasLiveData) {
+        pedestrianSource = "live";
         counts.push(latest.count);
         if (latest.observedAt) {
           if (!oldestObservedAt || latest.observedAt < oldestObservedAt) {
@@ -413,6 +427,7 @@ module.exports = {
   recommend,
   assembleBase,
   finalizeRoutes,
+  scoreCandidates,
   byCalmestThenFastest,
   REFUGE_LOOKUP_MINUTES,
   CONGESTION_POINT_SCORE,

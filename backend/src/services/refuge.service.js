@@ -4,18 +4,22 @@ const env = require("../config/env");
 const { metresForWalkingMinutes, haversineMetres, walkingMinutesForMetres } =
   require("../utils/geo");
 const { refugeId } = require("../utils/ids");
-const { getMockRefuges } = require("../data/mockRefuges");
+const { ApiError } = require("../middleware/errorHandler");
 
 /**
  * Sensory refuge finder (US2.1).
  *
- * Real path: call the pipeline's existing /refuge/nearby endpoint over HTTP with
- * a timeout. We CALL its correct parameterised distance query rather than
- * re-implementing it. It takes a radius in metres, so we convert the caller's
- * walking-minutes using the named 80 m/min constant first.
+ * Calls the pipeline's existing /refuge/nearby endpoint over HTTP with a
+ * timeout (+ one retry - see callPipelineWithRetry). We CALL its correct
+ * parameterised distance query rather than re-implementing it. It takes a
+ * radius in metres, so we convert the caller's walking-minutes using the
+ * named 80 m/min constant first.
  *
- * Mock path: when PIPELINE_URL is absent or the call fails, filter the mock
- * refuge fixtures by the same radius. Response shape is identical either way.
+ * No mock fallback: the pipeline is a required upstream. PIPELINE_URL absent
+ * or the call failing (after a retry) both throw ApiError.upstream(), which
+ * is the only way AC 2.1.1's own exception ("If refuge information is
+ * unavailable, display 'Refuge information is currently unavailable.'") can
+ * ever actually fire.
  *
  * Fields the open data does not contain (openNow, seatingAvailable, noiseLevel)
  * are ALWAYS null - never invented. There are no opening hours in the schema,
@@ -26,24 +30,16 @@ async function findNearby(latitude, longitude, walkingMinutes) {
   const radiusMetres = metresForWalkingMinutes(walkingMinutes);
   const origin = { latitude, longitude };
 
-  let refuges;
-  let source;
+  if (!env.hasPipeline) {
+    throw ApiError.upstream("Refuge information is currently unavailable.");
+  }
 
-  if (env.hasPipeline) {
-    try {
-      refuges = await callPipeline(latitude, longitude, radiusMetres, origin);
-      source = "live";
-    } catch (err) {
-      console.warn(
-        "[refuge.service] pipeline call failed, using mock:",
-        err.message
-      );
-      refuges = mockNearby(origin, radiusMetres);
-      source = "mock";
-    }
-  } else {
-    refuges = mockNearby(origin, radiusMetres);
-    source = "mock";
+  let refuges;
+  try {
+    refuges = await callPipelineWithRetry(latitude, longitude, radiusMetres, origin);
+  } catch (err) {
+    console.error("[refuge.service] pipeline call failed:", err.message);
+    throw ApiError.upstream("Refuge information is currently unavailable.");
   }
 
   return {
@@ -54,8 +50,21 @@ async function findNearby(latitude, longitude, walkingMinutes) {
     openingHoursKnown: false,
     count: refuges.length,
     refuges,
-    source,
+    source: "live",
   };
+}
+
+// One retry after a transient failure (timeout, connection reset, a brief
+// Cloud Run cold start) before giving up honestly. A single flaky request is
+// common under concurrent load; only a REPEATED failure should surface
+// AC 2.1.1's "Refuge information is currently unavailable." to the user.
+async function callPipelineWithRetry(latitude, longitude, radiusMetres, origin) {
+  try {
+    return await callPipeline(latitude, longitude, radiusMetres, origin);
+  } catch (err) {
+    console.warn("[refuge.service] pipeline call failed, retrying once:", err.message);
+    return await callPipeline(latitude, longitude, radiusMetres, origin);
+  }
 }
 
 async function callPipeline(latitude, longitude, radiusMetres, origin) {
@@ -80,19 +89,6 @@ async function callPipeline(latitude, longitude, radiusMetres, origin) {
   } finally {
     clearTimeout(timer);
   }
-}
-
-function mockNearby(origin, radiusMetres) {
-  return getMockRefuges()
-    .map((r) => ({
-      raw: r,
-      distanceMetres: Math.round(
-        haversineMetres(origin.latitude, origin.longitude, r.latitude, r.longitude)
-      ),
-    }))
-    .filter((x) => x.distanceMetres <= radiusMetres)
-    .sort((a, b) => a.distanceMetres - b.distanceMetres)
-    .map((x) => toRefuge(x.raw, origin, x.distanceMetres));
 }
 
 function toRefuge(raw, origin, distanceMetres) {

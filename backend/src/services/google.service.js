@@ -2,11 +2,11 @@
 
 const env = require("../config/env");
 const polyline = require("../utils/polyline");
-const { getMockRoutes } = require("../data/mockRoutes");
 const { haversineMetres } = require("../utils/geo");
+const { ApiError } = require("../middleware/errorHandler");
 
 // If start and destination are essentially the same point, there is no route to
-// walk. Used to exercise the no-routes path deterministically in mock mode.
+// walk. Used to exercise the no-routes path deterministically.
 const SAME_POINT_METRES = 5;
 
 /**
@@ -17,16 +17,16 @@ const SAME_POINT_METRES = 5;
  * it can't be scraped from network traffic and used to run up our bill. This is
  * the whole reason the frontend talks to us instead of Google directly.
  *
- * Real path (GOOGLE_MAPS_API_KEY present): call the Google Routes API with a
- * timeout, request alternative routes, and normalise them into candidate routes
- * with decoded geometry. Segment-level crowd scoring is added later by the route
- * service from pedestrian data.
+ * Calls the Google Routes API with a timeout, requests alternative routes, and
+ * normalises them into candidate routes with decoded geometry. Segment-level
+ * crowd scoring is added later by the route service from pedestrian data.
  *
- * Mock path (key absent OR the call fails): return the rich mock candidates,
- * which already include segment-level scores. Response shape is identical, so
- * nothing downstream changes when the key arrives - it is a config change only.
+ * No mock fallback: Google is a required upstream. GOOGLE_MAPS_API_KEY absent
+ * or the call failing both throw ApiError.upstream() - a genuine "0 routes
+ * found between two valid points" answer from Google is NOT an error and stays
+ * a normal empty-candidates result (AC 1.1.1 "No routes available").
  *
- * @returns {Promise<{candidates: object[], source: "live"|"mock"}>}
+ * @returns {Promise<{candidates: object[], source: "live"}>}
  */
 async function getCandidateRoutes(start, destination) {
   // No usable route when origin and destination are the same place. Returning
@@ -39,28 +39,21 @@ async function getCandidateRoutes(start, destination) {
     destination.longitude
   );
   if (straightLine < SAME_POINT_METRES) {
-    return { candidates: [], source: env.hasGoogleKey ? "live" : "mock" };
+    return { candidates: [], source: "live" };
   }
 
   if (!env.hasGoogleKey) {
-    return { candidates: getMockRoutes(), source: "mock" };
+    throw ApiError.upstream("Unable to compute routes right now.");
   }
 
   try {
     const candidates = await callGoogleRoutes(start, destination);
-    if (candidates.length === 0) {
-      // Google answered but found nothing usable - fall back rather than return
-      // an empty route list.
-      console.warn("[google.service] no routes returned, using mock");
-      return { candidates: getMockRoutes(), source: "mock" };
-    }
+    // Google answered but found nothing usable between two valid points - a
+    // legitimate outcome, not a failure (AC 1.1.1 "No routes available").
     return { candidates, source: "live" };
   } catch (err) {
-    console.warn(
-      "[google.service] Routes API call failed, using mock:",
-      err.message
-    );
-    return { candidates: getMockRoutes(), source: "mock" };
+    console.error("[google.service] Routes API call failed:", err.message);
+    throw ApiError.upstream("Unable to compute routes right now.");
   }
 }
 

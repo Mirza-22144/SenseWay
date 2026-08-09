@@ -31,6 +31,10 @@ async function evaluate(request) {
     currentLocation,
     destination
   );
+  // Candidates arrive unscored (segments: null, congestionPoints: []) - score
+  // them against live pedestrian data first, exactly like route.service.js's
+  // recommend(), or congestionPoints would always be empty here.
+  await routeService.scoreCandidates(candidates, new Date());
 
   const activeRoute =
     candidates.find((c) => c.routeId === activeRouteId) || candidates[0] || null;
@@ -105,7 +109,9 @@ function buildAlternative(candidates, activeRouteId, threshold) {
     });
 
   const finalized = routeService.finalizeRoutes(assembled, {
-    maxRoutes: metrics.MAX_ROUTES,
+    maxLowRoutes: metrics.MAX_LOW_ROUTES,
+    maxModerateRoutes: metrics.MAX_MODERATE_ROUTES,
+    maxHighRoutes: metrics.MAX_HIGH_ROUTES,
     maxExtraMinutes: metrics.ALTERNATIVE_MAX_EXTRA_MINUTES,
   });
   return finalized.routes[0] || null;

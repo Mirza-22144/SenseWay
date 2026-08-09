@@ -9,12 +9,14 @@
  * three layers deep at 11pm when someone finally hits the code path that reads
  * an undefined variable.
  *
- * WHY nothing is strictly "required": this backend is mock-first by design (see
- * README). The frontend developer must be able to run it with zero credentials.
- * So the absence of a DB/Google/pipeline credential is NOT a startup error - it
- * simply switches that integration into mock mode. We DO throw when a value that
- * *is* present is malformed (e.g. PORT is not a number), because that is a
- * genuine mistake rather than an intentional "run without it".
+ * WHY absence isn't a hard startup crash: Google/DB/pipeline credentials are
+ * all REQUIRED for this app to actually work (there is no mock fallback left
+ * anywhere in the services) - but env.js still boots without them rather than
+ * throwing, so /api/health stays up and the specific endpoint that needs the
+ * missing credential returns an honest 502 UPSTREAM_UNAVAILABLE instead of the
+ * whole process refusing to start. We DO throw when a value that *is* present
+ * is malformed (e.g. PORT is not a number), because that is a genuine mistake
+ * rather than a missing credential.
  */
 
 // Placeholder values shipped in .env.example. If someone copies .env.example to
@@ -85,7 +87,9 @@ const corsOrigins = (clean(process.env.CORS_ORIGINS) || DEFAULT_CORS)
 const env = Object.freeze({
   port: requireNumber("PORT", process.env.PORT, 5000),
 
-  // Database (mock fallback when hasDatabase is false)
+  // Database. hasDatabase=false means pedestrian data degrades honestly
+  // (segments render as "no live data", never fabricated) - see
+  // pedestrian.service.js. Required for AC 1.2.1/1.1.2 to show real data.
   hasDatabase,
   db: Object.freeze({
     host: rawDb.host || "localhost",
@@ -93,8 +97,8 @@ const env = Object.freeze({
     database: rawDb.name || "senseway",
     user: rawDb.user || "postgres",
     password: isPlaceholder(rawDb.password) ? "" : rawDb.password,
-    // Short timeout so mock fallback is fast when the DB is unreachable rather
-    // than the request hanging for the default 30s.
+    // Short timeout so a segment degrades to "no live data" fast rather than
+    // the request hanging for the default 30s.
     connectionTimeoutMillis: requireNumber(
       "DB_CONNECTION_TIMEOUT_MS",
       process.env.DB_CONNECTION_TIMEOUT_MS,
@@ -102,7 +106,9 @@ const env = Object.freeze({
     ),
   }),
 
-  // Google Routes API (mock fallback when hasGoogleKey is false)
+  // Google Routes API. Required: hasGoogleKey=false makes every /api/routes
+  // call throw 502 UPSTREAM_UNAVAILABLE (see google.service.js) - there is no
+  // route-planning feature without it.
   hasGoogleKey,
   googleMapsApiKey: hasGoogleKey ? googleKey : null,
   googleTimeoutMs: requireNumber(
@@ -111,7 +117,9 @@ const env = Object.freeze({
     4000
   ),
 
-  // senseway-data-pipeline refuge endpoint (mock fallback when absent)
+  // senseway-data-pipeline refuge endpoint. Required: hasPipeline=false makes
+  // every /api/refuges/nearby call throw 502 UPSTREAM_UNAVAILABLE (AC 2.1.1's
+  // own "Refuge information is currently unavailable." exception).
   hasPipeline,
   pipelineUrl: hasPipeline ? pipelineUrl : null,
   pipelineTimeoutMs: requireNumber(

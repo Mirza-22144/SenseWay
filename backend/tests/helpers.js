@@ -1,5 +1,12 @@
 "use strict";
 
+// Tests boot the app directly (not via server.js), so .env must be loaded
+// here explicitly - otherwise every credential-gated integration (Google,
+// the DB, the pipeline) silently looks "unconfigured" during tests even
+// though real credentials exist, which is not what a pre-deploy test run
+// should validate.
+require("dotenv").config({ path: require("path").join(__dirname, "..", ".env") });
+
 const app = require("../src/app");
 
 /**

@@ -7,11 +7,12 @@ const env = require("./env");
  * Lazily-constructed pg Pool.
  *
  * WHY lazy: /api/health must NEVER touch the database (a health check that can
- * fail for someone else's outage is worse than no health check). We also want
- * the app to boot and serve mock data when Postgres is down or unconfigured.
- * So we do not open a pool at import time - we build it on first query, and if
- * the DB is not configured at all we do not build one and callers fall back to
- * mock data.
+ * fail for someone else's outage is worse than no health check). So we do not
+ * open a pool at import time - we build it on first query. pedestrian.service.js
+ * checks env.hasDatabase itself before ever calling in here, so query()
+ * returning null for "not configured" is a defensive fallback, not the normal
+ * path - a genuine query failure rejects and is the caller's job to handle
+ * (degrade to "no live data for this spot", never invent a reading).
  *
  * This backend uses the discrete DB_* variables (Part 6 of the brief). The
  * senseway-data-pipeline uses a single DATABASE_URL instead - two services,
