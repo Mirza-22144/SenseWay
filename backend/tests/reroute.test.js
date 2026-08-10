@@ -59,7 +59,11 @@ test("the same request produces the same reroute decision every time (idempotent
     assert.ok(a.congestionPointId);
     // Deterministic id derived purely from coordinates -> stable across requests.
     assert.equal(a.congestionPointId, b.congestionPointId);
-    assert.ok(a.alternativeRoute && a.alternativeRoute.routeId);
+    // alternativeRoute can legitimately be null - e.g. Google offered no other
+    // route to go around the congestion. Only check its shape when present.
+    if (a.alternativeRoute) {
+      assert.ok(a.alternativeRoute.routeId);
+    }
   } else {
     assert.equal(a.congestionPointId, undefined);
   }
