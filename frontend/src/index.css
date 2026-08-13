@@ -45,3 +45,45 @@ body {
   background: var(--color-subtle);
   color: var(--color-primary);
 }
+
+/* Landing page leaf-fall: sparse and slow by design - this app is for
+   sensory-sensitive users, so the ambient animation must read as calm
+   background texture, never as motion competing for attention. */
+.leaf-layer {
+  color: #a8c08a;
+}
+
+.leaf {
+  position: absolute;
+  top: -8%;
+  opacity: 0;
+  animation-name: leaf-fall;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+
+@keyframes leaf-fall {
+  0% {
+    transform: translate(0, 0) rotate(0deg);
+    opacity: 0;
+  }
+  8% {
+    opacity: 0.5;
+  }
+  50% {
+    transform: translate(var(--drift, 24px), 55vh) rotate(140deg);
+  }
+  92% {
+    opacity: 0.45;
+  }
+  100% {
+    transform: translate(calc(var(--drift, 24px) * -1), 115vh) rotate(260deg);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .leaf-layer {
+    display: none;
+  }
+}
