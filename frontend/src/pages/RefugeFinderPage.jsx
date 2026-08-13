@@ -9,6 +9,7 @@ import RouteSummary from "../components/RouteSummary";
 import SensoryDetailsModal from "../components/SensoryDetailsModal";
 import TurnByTurnModal from "../components/TurnByTurnModal";
 import Banner from "../components/Banner";
+import InfoPopover from "../components/InfoPopover";
 import { useGoogleMapsLoader } from "../hooks/useGoogleMapsLoader";
 import { fetchNearbyRefuges } from "../services/refugesApi";
 import { fetchRoutes, ApiRequestError } from "../services/routesApi";
@@ -133,6 +134,13 @@ export default function RefugeFinderPage() {
     Boolean(directionsFastestRoute) &&
     directionsFastestRoute.highCrowdDistanceMetres > 0;
 
+  // contextual help/status messages, consolidated into one "i" popup instead of stacked banners
+  const directionsInfoItems = [
+    "Current pedestrian density is based on City of Melbourne live sensor data.",
+    ...(directions?.routes.length > 0 && !directionsRoute ? ["Select a route below to preview it on the map."] : []),
+    ...(directionsShowNoQuieterAlternativeNote ? ["No suitable quieter alternative available."] : []),
+  ];
+
   // directions sub-view: same route-picking UI as HomePage, scoped to one refuge
   if (mode === "directions" && directions) {
     return (
@@ -150,34 +158,13 @@ export default function RefugeFinderPage() {
         {banner && <Banner variant={banner.variant}>{banner.text}</Banner>}
 
         {directions.routes.length > 0 && (
-          <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
-            {/* left column: route cards */}
-            <div className="flex w-full flex-col gap-5 lg:w-[540px] lg:shrink-0">
-              <p className="text-sm font-medium text-muted">ROUTE OPTIONS</p>
-              {!directionsRoute && (
-                <Banner variant="brand">Select a route below to preview it on the map.</Banner>
-              )}
-              {directionsLiveDataUnavailable && (
-                <Banner variant="warning">Live sensory data unavailable.</Banner>
-              )}
-              {directionsShowNoQuieterAlternativeNote && (
-                <Banner variant="brand">No suitable quieter alternative available.</Banner>
-              )}
-              <RouteCardList
-                routes={directions.routes}
-                recommendedRouteId={directions.recommendedRouteId}
-                fastestRouteId={directions.fastestRouteId}
-                quieterAlternativeRouteId={directions.quieterAlternativeRouteId}
-                selectedRouteId={directions.selectedRouteId}
-                onSelect={handleSelectDirectionsRoute}
-                onShowDetails={setModalRoute}
-                onGetNavigation={setNavigationRoute}
-              />
-            </div>
-
-            {/* right column: map + selected-route summary */}
-            <div className="flex w-full flex-col gap-5">
-              <h2 className="text-xl font-semibold text-primary">Route Map</h2>
+          <>
+            {/* map + selected-route summary - sticky so it stays visible while route cards scroll below */}
+            <div className="sticky top-6 z-10 flex flex-col gap-5 bg-subtle pb-2">
+              <div className="flex items-center gap-2">
+                <h2 className="text-xl font-semibold text-primary">Route Map</h2>
+                <InfoPopover items={directionsInfoItems} />
+              </div>
               <MapView
                 hasMapsKey={hasMapsKey}
                 isLoaded={isLoaded}
@@ -195,7 +182,24 @@ export default function RefugeFinderPage() {
                 quieterAlternativeRouteId={directions.quieterAlternativeRouteId}
               />
             </div>
-          </div>
+
+            <div className="flex flex-col gap-5">
+              <p className="text-sm font-medium text-muted">ROUTE OPTIONS</p>
+              {directionsLiveDataUnavailable && (
+                <Banner variant="warning">Live sensory data unavailable.</Banner>
+              )}
+              <RouteCardList
+                routes={directions.routes}
+                recommendedRouteId={directions.recommendedRouteId}
+                fastestRouteId={directions.fastestRouteId}
+                quieterAlternativeRouteId={directions.quieterAlternativeRouteId}
+                selectedRouteId={directions.selectedRouteId}
+                onSelect={handleSelectDirectionsRoute}
+                onShowDetails={setModalRoute}
+                onGetNavigation={setNavigationRoute}
+              />
+            </div>
+          </>
         )}
 
         <SensoryDetailsModal route={modalRoute} onClose={() => setModalRoute(null)} />
