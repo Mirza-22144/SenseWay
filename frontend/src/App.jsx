@@ -13,7 +13,7 @@ function App() {
       <main>
         {view === "landing" && <LandingPage onGetStarted={() => setView("planner")} />}
         {view === "refuges" && <RefugeFinderPage />}
-        {view === "planner" && <HomePage onFindQuietSpace={() => setView("refuges")} />}
+        {view === "planner" && <HomePage />}
       </main>
     </div>
   );

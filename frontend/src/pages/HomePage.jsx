@@ -7,10 +7,11 @@ import CongestionSummary from "../components/CongestionSummary";
 import SensoryDetailsModal from "../components/SensoryDetailsModal";
 import TurnByTurnModal from "../components/TurnByTurnModal";
 import Banner from "../components/Banner";
+import InfoPopover from "../components/InfoPopover";
 import { useGoogleMapsLoader } from "../hooks/useGoogleMapsLoader";
 import { fetchRoutes, ApiRequestError } from "../services/routesApi";
 
-export default function HomePage({ onFindQuietSpace }) {
+export default function HomePage() {
   const { hasMapsKey, isLoaded, loadError } = useGoogleMapsLoader();
 
   const [start, setStart] = useState(null);
@@ -85,20 +86,18 @@ export default function HomePage({ onFindQuietSpace }) {
     Boolean(fastestRoute) &&
     fastestRoute.highCrowdDistanceMetres > 0;
 
+  // contextual help/status messages, consolidated into one "?" popup instead of stacked banners
+  const mapInfoItems = [
+    "Current pedestrian density is based on City of Melbourne live sensor data.",
+    ...(routes.length > 0 && !selectedRoute ? ["Select a route below to preview it on the map."] : []),
+    ...(showNoQuieterAlternativeNote ? ["No suitable quieter alternative available."] : []),
+  ];
+
   return (
     <div className="mx-auto flex max-w-[1440px] flex-col gap-8 px-16 py-8">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex flex-col gap-2">
-          <h1 className="text-3xl font-semibold text-primary">Plan Your Route</h1>
-          <p className="text-base text-secondary">Find a lower-sensory route across Melbourne CBD.</p>
-        </div>
-        <button
-          type="button"
-          onClick={onFindQuietSpace}
-          className="w-fit shrink-0 cursor-pointer rounded-lg border border-brand px-5 py-3 text-sm font-semibold text-brand-ink hover:bg-brand-subtle"
-        >
-          Find a Quiet Space
-        </button>
+      <div className="flex flex-col gap-2">
+        <h1 className="text-3xl font-semibold text-primary">Plan Your Route</h1>
+        <p className="text-base text-secondary">Find a lower-sensory route across Melbourne CBD.</p>
       </div>
 
       <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
@@ -120,13 +119,7 @@ export default function HomePage({ onFindQuietSpace }) {
           {routes.length > 0 && (
             <>
               <p className="text-sm font-medium text-muted">ROUTE OPTIONS</p>
-              {!selectedRoute && (
-                <Banner variant="brand">Select a route below to preview it on the map.</Banner>
-              )}
               {liveDataUnavailable && <Banner variant="warning">Live sensory data unavailable.</Banner>}
-              {showNoQuieterAlternativeNote && (
-                <Banner variant="brand">No suitable quieter alternative available.</Banner>
-              )}
               <CongestionSummary route={selectedRoute} />
               <RouteCardList
                 routes={routes}
@@ -142,26 +135,24 @@ export default function HomePage({ onFindQuietSpace }) {
           )}
         </div>
 
-        {/* right column: map + selected-route summary */}
-        {routes.length > 0 && (
-          <div className="flex w-full flex-col gap-5">
+        {/* right column: map + selected-route summary - shown from the start, not just after a search */}
+        <div className="flex w-full flex-col gap-5">
+          <div className="flex items-center gap-2">
             <h2 className="text-xl font-semibold text-primary">Congestion Map</h2>
-            <Banner variant="brand">
-              Current pedestrian density is based on City of Melbourne live sensor data.
-            </Banner>
-            <MapView
-              hasMapsKey={hasMapsKey}
-              isLoaded={isLoaded}
-              loadError={loadError}
-              routes={routes}
-              selectedRouteId={selectedRouteId}
-              recommendedRouteId={recommendedRouteId}
-              start={start}
-              destination={destination}
-            />
-            <RouteSummary route={selectedRoute} {...statusIds} />
+            <InfoPopover items={mapInfoItems} />
           </div>
-        )}
+          <MapView
+            hasMapsKey={hasMapsKey}
+            isLoaded={isLoaded}
+            loadError={loadError}
+            routes={routes}
+            selectedRouteId={selectedRouteId}
+            recommendedRouteId={recommendedRouteId}
+            start={start}
+            destination={destination}
+          />
+          <RouteSummary route={selectedRoute} {...statusIds} />
+        </div>
       </div>
 
       <SensoryDetailsModal route={modalRoute} onClose={() => setModalRoute(null)} />
