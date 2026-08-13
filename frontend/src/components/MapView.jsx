@@ -5,7 +5,7 @@ import { sensoryMeta } from "../utils/sensory";
 
 const MAP_CONTAINER_STYLE = {
   width: "100%",
-  height: "340px",
+  height: "460px",
   borderRadius: "12px",
 };
 const DEFAULT_CENTER = { lat: -37.8136, lng: 144.9631 };
@@ -125,7 +125,7 @@ export default function MapView({
 
   if (!hasMapsKey) {
     return (
-      <div className="flex h-[340px] w-full flex-col items-center justify-center rounded-xl border border-dashed border-line bg-base p-6 text-center">
+      <div className="flex h-[460px] w-full flex-col items-center justify-center rounded-xl border border-dashed border-line bg-base p-6 text-center">
         <p className="text-sm font-medium text-secondary">Map preview needs a Google Maps API key</p>
         <p className="mt-1 max-w-sm text-xs text-muted">
           Add VITE_GOOGLE_MAPS_API_KEY in frontend/.env to see routes plotted on a live map. Route
@@ -137,7 +137,7 @@ export default function MapView({
 
   if (loadError) {
     return (
-      <div className="flex h-[340px] items-center justify-center rounded-xl border border-danger-subtle bg-danger-subtle text-sm text-danger-ink">
+      <div className="flex h-[460px] items-center justify-center rounded-xl border border-danger-subtle bg-danger-subtle text-sm text-danger-ink">
         Unable to display map. Please refresh the page.
       </div>
     );
@@ -145,7 +145,7 @@ export default function MapView({
 
   if (!isLoaded) {
     return (
-      <div className="flex h-[340px] items-center justify-center rounded-xl border border-line bg-base text-sm text-secondary">
+      <div className="flex h-[460px] items-center justify-center rounded-xl border border-line bg-base text-sm text-secondary">
         Loading map…
       </div>
     );

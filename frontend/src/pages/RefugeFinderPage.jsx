@@ -158,9 +158,29 @@ export default function RefugeFinderPage() {
         {banner && <Banner variant={banner.variant}>{banner.text}</Banner>}
 
         {directions.routes.length > 0 && (
-          <>
-            {/* map + selected-route summary - sticky so it stays visible while route cards scroll below */}
-            <div className="sticky top-6 z-10 flex flex-col gap-5 bg-subtle pb-2">
+          <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
+            {/* left column: scrollable route cards */}
+            <div className="flex w-full flex-col gap-5 lg:w-[540px] lg:shrink-0">
+              <p className="text-sm font-medium text-muted">ROUTE OPTIONS</p>
+              {directionsLiveDataUnavailable && (
+                <Banner variant="warning">Live sensory data unavailable.</Banner>
+              )}
+              <div className="max-h-[560px] overflow-y-auto pr-1">
+                <RouteCardList
+                  routes={directions.routes}
+                  recommendedRouteId={directions.recommendedRouteId}
+                  fastestRouteId={directions.fastestRouteId}
+                  quieterAlternativeRouteId={directions.quieterAlternativeRouteId}
+                  selectedRouteId={directions.selectedRouteId}
+                  onSelect={handleSelectDirectionsRoute}
+                  onShowDetails={setModalRoute}
+                  onGetNavigation={setNavigationRoute}
+                />
+              </div>
+            </div>
+
+            {/* right column: map + selected-route summary - fixed in place while the cards scroll */}
+            <div className="sticky top-6 flex w-full flex-col gap-5">
               <div className="flex items-center gap-2">
                 <h2 className="text-xl font-semibold text-primary">Route Map</h2>
                 <InfoPopover items={directionsInfoItems} />
@@ -182,24 +202,7 @@ export default function RefugeFinderPage() {
                 quieterAlternativeRouteId={directions.quieterAlternativeRouteId}
               />
             </div>
-
-            <div className="flex flex-col gap-5">
-              <p className="text-sm font-medium text-muted">ROUTE OPTIONS</p>
-              {directionsLiveDataUnavailable && (
-                <Banner variant="warning">Live sensory data unavailable.</Banner>
-              )}
-              <RouteCardList
-                routes={directions.routes}
-                recommendedRouteId={directions.recommendedRouteId}
-                fastestRouteId={directions.fastestRouteId}
-                quieterAlternativeRouteId={directions.quieterAlternativeRouteId}
-                selectedRouteId={directions.selectedRouteId}
-                onSelect={handleSelectDirectionsRoute}
-                onShowDetails={setModalRoute}
-                onGetNavigation={setNavigationRoute}
-              />
-            </div>
-          </>
+          </div>
         )}
 
         <SensoryDetailsModal route={modalRoute} onClose={() => setModalRoute(null)} />

@@ -100,58 +100,62 @@ export default function HomePage() {
         <p className="text-base text-secondary">Find a lower-sensory route across Melbourne CBD.</p>
       </div>
 
-      <div className="flex w-full max-w-[540px] flex-col gap-5">
-        <SearchBar
-          hasMapsKey={hasMapsKey}
-          isLoaded={isLoaded}
-          start={start}
-          destination={destination}
-          onChangeStart={setStart}
-          onChangeDestination={setDestination}
-          onFindRoute={handleFindRoute}
-          loading={loading}
-        />
-
-        {banner && <Banner variant={banner.variant}>{banner.text}</Banner>}
-      </div>
-
-      {/* map + selected-route summary - pinned near the top of the viewport so it stays visible
-          while the user scrolls through route cards below, instead of scrolling out of view */}
-      <div className="sticky top-6 z-10 flex flex-col gap-5 bg-subtle pb-2">
-        <div className="flex items-center gap-2">
-          <h2 className="text-xl font-semibold text-primary">Congestion Map</h2>
-          <InfoPopover items={mapInfoItems} />
-        </div>
-        <MapView
-          hasMapsKey={hasMapsKey}
-          isLoaded={isLoaded}
-          loadError={loadError}
-          routes={routes}
-          selectedRouteId={selectedRouteId}
-          recommendedRouteId={recommendedRouteId}
-          start={start}
-          destination={destination}
-        />
-        <RouteSummary route={selectedRoute} {...statusIds} />
-      </div>
-
-      {routes.length > 0 && (
-        <div className="flex flex-col gap-5">
-          <p className="text-sm font-medium text-muted">ROUTE OPTIONS</p>
-          {liveDataUnavailable && <Banner variant="warning">Live sensory data unavailable.</Banner>}
-          <CongestionSummary route={selectedRoute} />
-          <RouteCardList
-            routes={routes}
-            recommendedRouteId={recommendedRouteId}
-            fastestRouteId={fastestRouteId}
-            quieterAlternativeRouteId={quieterAlternativeRouteId}
-            selectedRouteId={selectedRouteId}
-            onSelect={setSelectedRouteId}
-            onShowDetails={setModalRoute}
-            onGetNavigation={setNavigationRoute}
+      <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
+        {/* left column: search form + scrollable route cards */}
+        <div className="flex w-full flex-col gap-5 lg:w-[540px] lg:shrink-0">
+          <SearchBar
+            hasMapsKey={hasMapsKey}
+            isLoaded={isLoaded}
+            start={start}
+            destination={destination}
+            onChangeStart={setStart}
+            onChangeDestination={setDestination}
+            onFindRoute={handleFindRoute}
+            loading={loading}
           />
+
+          {banner && <Banner variant={banner.variant}>{banner.text}</Banner>}
+
+          {routes.length > 0 && (
+            <>
+              <p className="text-sm font-medium text-muted">ROUTE OPTIONS</p>
+              {liveDataUnavailable && <Banner variant="warning">Live sensory data unavailable.</Banner>}
+              <CongestionSummary route={selectedRoute} />
+              <div className="max-h-[560px] overflow-y-auto pr-1">
+                <RouteCardList
+                  routes={routes}
+                  recommendedRouteId={recommendedRouteId}
+                  fastestRouteId={fastestRouteId}
+                  quieterAlternativeRouteId={quieterAlternativeRouteId}
+                  selectedRouteId={selectedRouteId}
+                  onSelect={setSelectedRouteId}
+                  onShowDetails={setModalRoute}
+                  onGetNavigation={setNavigationRoute}
+                />
+              </div>
+            </>
+          )}
         </div>
-      )}
+
+        {/* right column: map + selected-route summary - fixed in place while the cards scroll */}
+        <div className="sticky top-6 flex w-full flex-col gap-5">
+          <div className="flex items-center gap-2">
+            <h2 className="text-xl font-semibold text-primary">Congestion Map</h2>
+            <InfoPopover items={mapInfoItems} />
+          </div>
+          <MapView
+            hasMapsKey={hasMapsKey}
+            isLoaded={isLoaded}
+            loadError={loadError}
+            routes={routes}
+            selectedRouteId={selectedRouteId}
+            recommendedRouteId={recommendedRouteId}
+            start={start}
+            destination={destination}
+          />
+          <RouteSummary route={selectedRoute} {...statusIds} />
+        </div>
+      </div>
 
       <SensoryDetailsModal route={modalRoute} onClose={() => setModalRoute(null)} />
       <TurnByTurnModal route={navigationRoute} onClose={() => setNavigationRoute(null)} />
