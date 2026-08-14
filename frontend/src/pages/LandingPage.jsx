@@ -24,7 +24,10 @@ function Leaf({ left, size, delay, duration, drift }) {
       }}
       aria-hidden="true"
     >
-      <path d="M12 2C7 4 4 8 4 13c0 5 4 9 8 9s8-4 8-9c0-5-3-9-8-11Z" fill="currentColor" />
+      <path
+        d="M12 2C7 4 4 8 4 13c0 5 4 9 8 9s8-4 8-9c0-5-3-9-8-11Z"
+        fill="currentColor"
+      />
     </svg>
   );
 }
@@ -39,7 +42,10 @@ export default function LandingPage({ onGetStarted }) {
       />
       <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/15 to-transparent" />
 
-      <div className="leaf-layer pointer-events-none absolute inset-0" aria-hidden="true">
+      <div
+        className="leaf-layer pointer-events-none absolute inset-0"
+        aria-hidden="true"
+      >
         {LEAVES.map((leaf, i) => (
           <Leaf key={i} {...leaf} />
         ))}
@@ -51,7 +57,7 @@ export default function LandingPage({ onGetStarted }) {
         </h1>
         <p className="max-w-md text-lg text-white/90">
           SenseWay finds calmer, lower-sensory walking routes across the city
-          &mdash; and quiet spaces nearby when you need one.
+          and quiet spaces nearby when you need one.
         </p>
         <button
           type="button"

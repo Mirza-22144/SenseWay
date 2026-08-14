@@ -256,21 +256,19 @@ export default function RefugeFinderPage() {
           )}
         </div>
 
-        {/* right column: map */}
-        {visibleRefuges.length > 0 && (
-          <div className="flex w-full flex-col gap-5">
-            <h2 className="text-xl font-semibold text-primary">Refuge Map</h2>
-            <RefugeMap
-              hasMapsKey={hasMapsKey}
-              isLoaded={isLoaded}
-              loadError={loadError}
-              origin={origin}
-              refuges={visibleRefuges}
-              selectedRefugeId={selectedRefugeId}
-              onSelect={setSelectedRefugeId}
-            />
-          </div>
-        )}
+        {/* right column: map - shown from the start, not just after a search */}
+        <div className="flex w-full flex-col gap-5">
+          <h2 className="text-xl font-semibold text-primary">Refuge Map</h2>
+          <RefugeMap
+            hasMapsKey={hasMapsKey}
+            isLoaded={isLoaded}
+            loadError={loadError}
+            origin={origin}
+            refuges={visibleRefuges}
+            selectedRefugeId={selectedRefugeId}
+            onSelect={setSelectedRefugeId}
+          />
+        </div>
       </div>
 
       <RefugeDetailsModal

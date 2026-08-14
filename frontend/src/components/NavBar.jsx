@@ -8,7 +8,7 @@ const NAV_LINKS = [
 
 export default function NavBar({ currentView = "landing", onNavigate }) {
   return (
-    <header className="flex h-16 items-center justify-between border-b border-line bg-base px-12">
+    <header className="flex h-20 items-center justify-between border-b border-line bg-base px-12">
       <button
         type="button"
         onClick={() => onNavigate?.("landing")}
@@ -18,7 +18,7 @@ export default function NavBar({ currentView = "landing", onNavigate }) {
         <span className="text-xl font-semibold text-logo">SenseWay</span>
       </button>
 
-      <nav className="flex items-center gap-8 text-sm font-medium">
+      <nav className="flex items-center gap-10 text-lg font-medium">
         {NAV_LINKS.map((link) => {
           const isActive = link.key === currentView;
           return (
